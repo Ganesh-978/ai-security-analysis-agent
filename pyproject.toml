@@ -11,6 +11,7 @@ dependencies = [
     "chromadb>=0.5.5",
     "faiss-cpu>=1.8.0",
     "fastapi>=0.115.0",
+    "google-genai>=1.0.0",
     "langchain>=0.3.0",
     "langchain-chroma>=0.1.4",
     "langchain-community>=0.3.0",

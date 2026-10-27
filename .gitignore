@@ -6,3 +6,4 @@ data/chroma_db/
 data/faiss_index/
 data/uploads/*
 !data/uploads/.gitkeeps
+sample_codes/
