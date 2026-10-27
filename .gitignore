@@ -4,6 +4,9 @@ __pycache__/
 *.pyc
 data/chroma_db/
 data/faiss_index/
-data/uploads/*
+data/reviews.db
 !data/uploads/.gitkeeps
 sample_codes/
+
+data/reviews.db
+*.db

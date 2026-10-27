@@ -27,6 +27,7 @@ dependencies = [
     "python-multipart>=0.0.12",
     "requests>=2.32.3",
     "sentence-transformers>=3.0.1",
+    "sqlalchemy",
     "streamlit>=1.39.0",
     "unstructured>=0.15.0",
     "uvicorn>=0.31.0",
