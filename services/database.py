@@ -1,4 +1,3 @@
-# services/database.py
 import json
 import shutil
 import sqlite3

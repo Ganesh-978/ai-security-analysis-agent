@@ -22,5 +22,6 @@ requests>=2.32.3
 google-genai>=1.0.0
 radon 
 bandit 
-pylint 
-ruff
+tree-sitter
+tree-sitter-python
+tree-sitter-java

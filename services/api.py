@@ -1,4 +1,3 @@
-# services/api.py
 import sys
 from pathlib import Path
 
@@ -10,14 +9,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from models.schemas import (
     CodeSubmission,
-    Milestone2AnalysisReport,
+    AnalysisReport,
     ComplexityMetrics,
     QualityAssessmentMetrics,
     SeverityBreakdown,
     FindingItem,
 )
 from parsers.code_validator import validate_submission
-from src.workflow import run_milestone2_pipeline
+from src.workflow import run_pipeline
 from services.database import init_db, save_review_to_db, get_recent_reviews
 
 app = FastAPI(
@@ -46,7 +45,7 @@ def fetch_review_history():
     return {"history": get_recent_reviews(limit=10)}
 
 
-@app.post("/api/v1/analyze", response_model=Milestone2AnalysisReport)
+@app.post("/api/v1/analyze", response_model=AnalysisReport)
 def analyze_code_endpoint(submission: CodeSubmission):
     validation = validate_submission(submission.code, filename=submission.filename)
     fname = submission.filename or (
@@ -54,19 +53,19 @@ def analyze_code_endpoint(submission: CodeSubmission):
     )
 
     if not validation.is_valid:
-        return Milestone2AnalysisReport(
+        return AnalysisReport(
             filename=fname,
             language=validation.detected_language,
             syntax_validation=validation,
         )
 
     try:
-        res = run_milestone2_pipeline(
+        res = run_pipeline(
             code=submission.code,
             language=validation.detected_language,
             filename=fname,
         )
-        report = Milestone2AnalysisReport(
+        report = AnalysisReport(
             filename=fname,
             language=validation.detected_language,
             syntax_validation=validation,
