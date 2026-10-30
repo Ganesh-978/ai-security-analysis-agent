@@ -1,4 +1,9 @@
 ﻿import os
+
+# Prevent Hugging Face transformers from importing torchvision
+os.environ["TRANSFORMERS_NO_TORCHVISION"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 from dotenv import load_dotenv
 from langchain_huggingface import HuggingFaceEmbeddings
 

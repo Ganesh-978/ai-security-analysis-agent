@@ -5,23 +5,37 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from models.schemas import (
     CodeSubmission,
-    AnalysisReport,
+    CodeReviewReport,
     ComplexityMetrics,
     QualityAssessmentMetrics,
     SeverityBreakdown,
     FindingItem,
 )
 from parsers.code_validator import validate_submission
-from src.workflow import run_pipeline
+from src.workflow import run_review_pipeline
 from services.database import init_db, save_review_to_db, get_recent_reviews
+from rag.retriever import _get_or_build_faiss_index
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    try:
+        _get_or_build_faiss_index()
+    except Exception:
+        pass
+    yield
+
 
 app = FastAPI(
-    title="AI Code Review & Security Analysis Agent - 6-Layer API",
-    version="2.0.0",
+    title="AI Code Review & Security Analysis API",
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -32,12 +46,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-init_db()
-
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "architecture": "6-Layer AI Security Agent"}
+    return {"status": "ok"}
 
 
 @app.get("/api/v1/history")
@@ -45,7 +57,7 @@ def fetch_review_history():
     return {"history": get_recent_reviews(limit=10)}
 
 
-@app.post("/api/v1/analyze", response_model=AnalysisReport)
+@app.post("/api/v1/analyze", response_model=CodeReviewReport)
 def analyze_code_endpoint(submission: CodeSubmission):
     validation = validate_submission(submission.code, filename=submission.filename)
     fname = submission.filename or (
@@ -53,19 +65,19 @@ def analyze_code_endpoint(submission: CodeSubmission):
     )
 
     if not validation.is_valid:
-        return AnalysisReport(
+        return CodeReviewReport(
             filename=fname,
             language=validation.detected_language,
             syntax_validation=validation,
         )
 
     try:
-        res = run_pipeline(
+        res = run_review_pipeline(
             code=submission.code,
             language=validation.detected_language,
             filename=fname,
         )
-        report = AnalysisReport(
+        report = CodeReviewReport(
             filename=fname,
             language=validation.detected_language,
             syntax_validation=validation,

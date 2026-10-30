@@ -8,14 +8,7 @@ from src.agents import (
 )
 
 
-def build_milestone2_graph():
-    """
-    7-Stage Multi-Agent Workflow (Slides 3, 4, 7, 8):
-    1-2. Upload & Syntax Validation (Gatekeeper)
-    3. Static SAST Analysis & RAG Context Retrieval
-    4. Parallel Execution: Code Analysis Agent || Security Vulnerability Agent
-    5-7. OWASP Rule Matching -> Severity Scoring -> Unified Findings Report
-    """
+def build_review_graph():
     workflow = StateGraph(ReviewWorkflowState)
 
     workflow.add_node("static_analysis_and_rag", static_analysis_and_rag_node)
@@ -26,24 +19,19 @@ def build_milestone2_graph():
     )
 
     workflow.add_edge(START, "static_analysis_and_rag")
-
-    # Parallel Fan-Out: Code Analysis Agent & Security Vulnerability Agent
     workflow.add_edge("static_analysis_and_rag", "code_analysis_agent")
     workflow.add_edge("static_analysis_and_rag", "security_vulnerability_agent")
-
-    # Fan-In: OWASP Rule Matching, Severity Scoring & Unified Report Generation
     workflow.add_edge("code_analysis_agent", "owasp_rule_matching_and_scoring")
     workflow.add_edge("security_vulnerability_agent", "owasp_rule_matching_and_scoring")
-
     workflow.add_edge("owasp_rule_matching_and_scoring", END)
 
     return workflow.compile()
 
 
-milestone2_graph = build_milestone2_graph()
+review_graph = build_review_graph()
 
 
-def run_pipeline(code: str, language: str, filename: str = "snippet") -> dict:
+def run_review_pipeline(code: str, language: str, filename: str = "snippet") -> dict:
     initial_state: ReviewWorkflowState = {
         "filename": filename,
         "language": language,
@@ -65,4 +53,4 @@ def run_pipeline(code: str, language: str, filename: str = "snippet") -> dict:
             "Informational": 0,
         },
     }
-    return milestone2_graph.invoke(initial_state)
+    return review_graph.invoke(initial_state)

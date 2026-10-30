@@ -1,0 +1,1 @@
+python -c "from pathlib import Path; Path('.streamlit').mkdir(exist_ok=True); Path('.streamlit/config.toml').write_text('[server]\nfileWatcherType = \"none\"\n', encoding='utf-8')"

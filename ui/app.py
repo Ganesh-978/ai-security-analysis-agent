@@ -1,5 +1,9 @@
-﻿import sys
+﻿import os
+import sys
 from pathlib import Path
+
+os.environ["TRANSFORMERS_NO_TORCHVISION"] = "1"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -19,12 +23,12 @@ st.set_page_config(
 
 st.title("🛡️ AI Code Review & Security Analysis Agent")
 st.caption(
-    "7-Stage Pipeline: Code Upload → AST/Tree-sitter Syntax Validation → SAST (Bandit/Semgrep/Pylint/SpotBugs/PMD/Checkstyle) "
-    "→ Parallel Code & Security Agents → OWASP Rule Matching → Severity Scoring → Unified Findings Report"
+    "Pipeline: Code Input → AST/Tree-sitter Validation → SAST (Bandit/Semgrep/Pylint/SpotBugs/PMD/Checkstyle) "
+    "→ Parallel Code & Security Agents → OWASP Rule Matching → Severity Scoring → Unified Report"
 )
 
-if "m2_report" not in st.session_state:
-    st.session_state.m2_report = None
+if "review_report" not in st.session_state:
+    st.session_state.review_report = None
 
 SEVERITY_ICON = {
     "Critical": "🔴 **CRITICAL**",
@@ -37,7 +41,7 @@ SEVERITY_ICON = {
 left_col, right_col = st.columns([1, 1.25], gap="large")
 
 with left_col:
-    st.subheader("Stage 1 & 2: Code Submission & AST / Tree-sitter Validation")
+    st.subheader("Code Submission & Syntax Validation")
 
     uploaded_file = st.file_uploader(
         "Upload Python (.py) or Java (.java) file", type=["py", "java"]
@@ -68,12 +72,12 @@ with left_col:
         )
         st.info(
             f"**Auto-Detected Language:** {lang_label} | "
-            f"**Parser:** {validation.parser_used} | "
-            f"**Syntax Tree Nodes:** {validation.ast_node_count}"
+            f"**Parser:** `{validation.parser_used}` | "
+            f"**Syntax Tree Nodes:** `{validation.ast_node_count}`"
         )
 
         if validation.is_valid:
-            st.success("✅ **Syntax Validation Passed** — Ready for SAST + Parallel Multi-Agent Analysis")
+            st.success("✅ **Syntax Validation Passed** — Ready for SAST + Multi-Agent Analysis")
         else:
             st.error(
                 f"🚫 **Syntax Error on Line {validation.line_number}:** {validation.error_message}"
@@ -82,29 +86,27 @@ with left_col:
                 st.code(validation.offending_line, language="text")
 
     run_btn = st.button(
-        "🚀 Run SAST + Parallel Multi-Agent Analysis",
+        "🚀 Analyze Code",
         type="primary",
-        use_container_width=True,
+        width="stretch",
     )
 
 with right_col:
-    st.subheader("Stages 3–7: OWASP Security Report & Unified Findings")
+    st.subheader("Security & Code Quality Analysis Report")
 
     if run_btn:
         if not code_input.strip():
             st.warning("Please paste or upload source code on the left first.")
         elif not validation.is_valid:
-            st.session_state.m2_report = None
+            st.session_state.review_report = None
             st.error(
-                "🚫 **Blocked by Syntax Gatekeeper:** Fix syntax errors before running the agents."
+                "🚫 **Blocked by Syntax Gatekeeper:** Fix syntax errors before running analysis."
             )
         else:
             fname = filename or (
                 "snippet.py" if validation.detected_language == "python" else "Snippet.java"
             )
-            with st.spinner(
-                "Running SAST Scanners, Parallel Code & Security Agents, and OWASP Rule Matching..."
-            ):
+            with st.spinner("Running SAST Scanners, Parallel Agents & OWASP Rule Matching..."):
                 try:
                     resp = requests.post(
                         API_URL,
@@ -113,15 +115,16 @@ with right_col:
                             "code": code_input,
                             "language": validation.detected_language,
                         },
-                        timeout=120,
+                        timeout=60,
                     )
                     if resp.status_code == 200:
-                        st.session_state.m2_report = resp.json()
+                        st.session_state.review_report = resp.json()
                     else:
                         raise RuntimeError(resp.text)
                 except Exception:
-                    from src.workflow import run_pipeline
-                    raw_res = run_pipeline(
+                    from src.workflow import run_review_pipeline
+
+                    raw_res = run_review_pipeline(
                         code=code_input,
                         language=validation.detected_language,
                         filename=fname,
@@ -129,15 +132,15 @@ with right_col:
                     raw_res["filename"] = fname
                     raw_res["language"] = validation.detected_language
                     save_review_to_db(raw_res)
-                    st.session_state.m2_report = raw_res
+                    st.session_state.review_report = raw_res
 
-    if st.session_state.m2_report:
-        rep = st.session_state.m2_report
+    if st.session_state.review_report:
+        rep = st.session_state.review_report
         sev = rep.get("severity_breakdown", {})
         cm = rep.get("complexity_metrics", {})
         qa = rep.get("quality_assessment", {})
 
-        st.markdown("##### 🔺 Stage 6: Severity Scoring Breakdown")
+        st.markdown("##### 🔺 Severity Scoring Breakdown")
         s1, s2, s3, s4, s5 = st.columns(5)
         s1.metric("🔴 Critical", sev.get("Critical", 0))
         s2.metric("🟠 High", sev.get("High", 0))
@@ -165,11 +168,11 @@ with right_col:
         static_flags = rep.get("static_tool_flags", [])
 
         t_uni, t_sec, t_qual, t_stat, t_db = st.tabs([
-            f"📋 Unified Findings Report ({len(unified)})",
-            f"🔒 Security Vulnerability Report ({len(sec_list)})",
-            f"🧹 Code Analysis Report ({len(qual_list)})",
+            f"📋 Unified Findings ({len(unified)})",
+            f"🔒 Security Vulnerabilities ({len(sec_list)})",
+            f"🧹 Code Quality ({len(qual_list)})",
             f"🛠️ SAST & Linter Alerts ({len(static_flags)})",
-            "🗄️ SQLite History",
+            "🗄️ Review History",
         ])
 
         def render_structured_report_cards(items, lang):
@@ -185,11 +188,11 @@ with right_col:
                 )
                 with st.expander(header):
                     st.markdown(
-                        f"1. **Vulnerability / Issue Name:** {vuln_name}\n"
+                        f"1. **Vulnerability / Issue Name:** `{vuln_name}`\n"
                         f"2. **Severity Level:** {icon}\n"
-                        f"3. **Affected Line Number:** {item['line_reference']}\n"
-                        f"- **Matched OWASP / Standard Rule:** {item.get('owasp_category') or item.get('tool_or_standard', '')}\n"
-                        f"- **Detection Tool / Agent:** {item['agent_source']} ({item.get('tool_or_standard', '')})"
+                        f"3. **Affected Line Number:** `{item['line_reference']}`\n"
+                        f"- **Matched OWASP / Standard Rule:** `{item.get('owasp_category') or item.get('tool_or_standard', '')}`\n"
+                        f"- **Detection Tool / Agent:** `{item['agent_source']}` (`{item.get('tool_or_standard', '')}`)"
                     )
                     if item.get("code_snippet"):
                         st.markdown("**Flagged Source Line(s):**")
@@ -211,26 +214,24 @@ with right_col:
 
         with t_stat:
             st.caption(
-                "Stage 3 SAST & Static Linter Alerts (Python: Bandit, Semgrep, Pylint | Java: SpotBugs, PMD, Checkstyle | Enterprise: SonarQube, Snyk)"
+                "SAST & Static Linter Alerts (Python: Bandit, Semgrep, Pylint | Java: SpotBugs, PMD, Checkstyle | Enterprise: SonarQube, Snyk)"
             )
             if not static_flags:
                 st.success("No static pattern violations triggered.")
             for sf in static_flags:
                 st.markdown(
                     f"- **[{sf['severity']}] {sf.get('vulnerability_name', sf['type'])}** "
-                    f"— {sf['tool']} ({sf['line']}): {sf['message']}"
+                    f"— `{sf['tool']}` ({sf['line']}): {sf['message']}"
                 )
                 if sf.get("snippet"):
                     st.code(sf["snippet"], language=validation.detected_language)
 
         with t_db:
-            st.caption("SQLite Database (data/reviews.db) — Stored Analysis History")
+            st.caption("SQLite Database (`data/reviews.db`) — Stored Analysis History")
             history_rows = get_recent_reviews(limit=10)
             if history_rows:
-                st.dataframe(history_rows, use_container_width=True)
+                st.dataframe(history_rows, width="stretch")
             else:
                 st.info("No reviews stored in SQLite yet.")
     else:
-        st.info(
-            "Paste valid Python or Java code on the left and click **Run SAST + Parallel Multi-Agent Analysis**."
-        )
+        st.info("Paste valid Python or Java code on the left and click **Analyze Code**.")
