@@ -46,13 +46,13 @@ Scan the submitted {language} code across ALL OWASP Top 10 categories (A01 throu
 - A01: Broken Access Control (Missing authorization, IDOR, Path Traversal, CSRF, Least Privilege violations)
 - A02: Cryptographic Failures (Hardcoded secrets/keys, weak hashing MD5/SHA1, weak ciphers DES/ECB, insecure PRNG)
 - A03: Injection (SQL Injection, NoSQL/LDAP Injection, OS Command Injection, Cross-Site Scripting XSS, Code Injection eval/exec)
-- A04: Insecure Design (Missing business logic validation, missing rate limiting, insecure workflow)
-- A05: Security Misconfiguration (Debug mode enabled, disabled TLS verification, XXE, insecure defaults)
-- A06: Vulnerable and Outdated Components (Deprecated/insecure libraries or APIs)
-- A07: Identification and Authentication Failures (Plaintext credentials, weak session/JWT handling, hardcoded passwords)
+- A04: Insecure Design (Missing business logic validation, missing rate limiting)
+- A05: Security Misconfiguration (Debug mode enabled, disabled TLS verification, XXE)
+- A06: Vulnerable and Outdated Components
+- A07: Identification and Authentication Failures (Plaintext credentials, weak session/JWT handling)
 - A08: Software and Data Integrity Failures (Insecure deserialization via pickle, yaml.load, ObjectInputStream)
-- A09: Security Logging and Monitoring Failures (Swallowed security exceptions, sensitive data logged in plaintext)
-- A10: Server-Side Request Forgery - SSRF (Unvalidated outbound URLs/requests)
+- A09: Security Logging and Monitoring Failures (Swallowed security exceptions)
+- A10: Server-Side Request Forgery - SSRF
 
 SAST Tool Alerts Input:
 {static_context}
@@ -60,26 +60,106 @@ SAST Tool Alerts Input:
 Retrieved OWASP / CWE / CERT / Bandit / SpotBugs Knowledge Base Rules:
 {security_guidelines}
 
-For every detected security issue, generate a structured report containing the 6 required security report fields:
-1. "vulnerability_name": Clear, standardized name of the vulnerability
-2. "severity": One of ["Critical", "High", "Medium", "Low", "Informational"]
-3. "line_reference": Exact Affected Line Number in the source file (e.g., "Line 14")
-4. "description": Plain-language Risk Description explaining what the vulnerability is, how it could be exploited, and its potential impact
-5. "recommendation": Specific guidance on how to remediate the vulnerability
-6. "secure_code_suggestion": Best-practice {language} code example demonstrating the correct, secure way to implement the functionality
-
-Also include:
+Return ONLY a valid JSON array where each object contains:
 - "id": string (e.g., "SEC-01")
 - "sub_category": "OWASP Security Vulnerability"
-- "title": string (short descriptive title)
+- "vulnerability_name": string (standardized name, e.g., "SQL Injection", "Hardcoded Secret")
+- "title": string
+- "severity": one of ["Critical", "High", "Medium", "Low", "Informational"]
 - "tool_or_standard": string (specific Bandit, Semgrep, SpotBugs, PMD, CERT, or CWE rule ID)
-- "owasp_category": string (exact OWASP Top 10 category A01-A10 and CWE ID matched from the Knowledge Base)
+- "owasp_category": string (exact OWASP Top 10 category A01-A10 and CWE ID)
+- "line_reference": string (exact Affected Line Number, e.g., "Line 14")
 - "code_snippet": string (the vulnerable line of code)
-
-Return ONLY a valid JSON array of objects.""",
+- "description": string (plain-language Risk Description of exploitability and impact)
+- "recommendation": string (specific guidance on how to remediate)
+- "secure_code_suggestion": string (best-practice secure {language} code snippet demonstrating the fix)""",
     ),
     (
         "human",
         "Filename: {filename}\nLanguage: {language}\n\nNumbered Source Code:\n{numbered_code}",
     ),
+])
+
+
+REMEDIATION_AGENT_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """You are the AI Remediation Agent. Your responsibilities are:
+1. Understand Detected Issues from the Code Analysis and Security Vulnerability agents.
+2. Find the Root Cause (why the vulnerability or code smell exists in the code).
+3. Retrieve & Ground in Secure Coding Guidelines (OWASP, SEI CERT, CWE, Clean Code).
+4. Explain Why the Issue Occurs & its risk to developers.
+5. Classify each fix into one of the 4 Recommendation Categories:
+   - "Security Recommendation" (prevent vulnerabilities, improve auth, protect sensitive data)
+   - "Code Quality Recommendation" (remove duplicate code, improve readability, simplify methods)
+   - "Performance Recommendation" (improve efficiency, reduce unnecessary operations)
+   - "Maintainability Recommendation" (better structure, modular design, easier updates)
+6. Provide concrete Fix Steps and a working Corrected Code snippet in {language}.
+
+Retrieved Knowledge Base Guidelines:
+{rag_guidelines}
+
+Return ONLY a valid JSON array where each object has these exact keys:
+- "finding_id": string (matches the finding id, e.g., "SEC-01" or "QUAL-01")
+- "issue_title": string
+- "severity": one of ["Critical", "High", "Medium", "Low", "Informational"]
+- "line_reference": string
+- "recommendation_category": one of ["Security Recommendation", "Code Quality Recommendation", "Performance Recommendation", "Maintainability Recommendation"]
+- "root_cause": string
+- "why_it_occurs": string
+- "best_practice_guideline": string
+- "fix_steps": string
+- "original_code": string
+- "corrected_code": string (valid, secure {language} replacement code)""",
+    ),
+    (
+        "human",
+        "Language: {language}\nOriginal Code:\n```{language}\n{code}\n```\n\nDetected Findings:\n{findings_json}",
+    ),
+])
+
+
+PR_SUMMARY_AGENT_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """You are the PR Summary Agent & AI Report Generator.
+Compile all agent findings and remediation plans into a clean, structured Pull Request Review Summary in Markdown containing:
+1. **Executive Overview & Release Verdict** (Include Code Health Score: {health_score}/100 and whether the PR requires changes)
+2. **Severity Breakdown Summary** (Critical, High, Medium, Low, Informational counts)
+3. **Security Vulnerability Summary** (Key OWASP / CWE threats detected and their impact)
+4. **Code Quality & Smell Summary** (Complexity, anti-patterns, maintainability observations)
+5. **Prioritized Fix Roadmap** (Step-by-step developer action list ordered from Critical to Low)""",
+    ),
+    (
+        "human",
+        "Filename: {filename} ({language})\nSeverity Breakdown: {severity_json}\nUnified Findings: {findings_json}\nRemediation Plan: {remediation_json}",
+    ),
+])
+
+
+CONVERSATIONAL_ASSISTANT_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """You are the RAG-Powered Conversational Code Assistant for an AI Code Review & Security Analysis platform.
+You help developers understand flagged issues, error messages, OWASP security vulnerabilities, and clean code refactoring.
+Ground your answer in:
+1. The Retrieved Knowledge Base Guidelines (OWASP Top 10, CWE, SEI CERT, Bandit, SpotBugs, PMD, Clean Code)
+2. The developer's currently submitted {language} source code and flagged findings
+3. The multi-turn conversation history
+
+Always provide clear explanations, cite the relevant security/coding standard, and include a concrete {language} code example when appropriate.
+
+Retrieved Knowledge Base Context:
+{kb_context}
+
+Submitted Code Context:
+{code_context}
+
+Flagged Findings Context:
+{findings_context}
+
+Recent Conversation History:
+{history_context}""",
+    ),
+    ("human", "Developer Question (Detected Intent: {intent}):\n{question}"),
 ])

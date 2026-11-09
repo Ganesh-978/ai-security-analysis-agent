@@ -15,9 +15,13 @@ from models.schemas import (
     QualityAssessmentMetrics,
     SeverityBreakdown,
     FindingItem,
+    RemediationPlanItem,
+    AssistantQueryRequest,
+    AssistantQueryResponse,
 )
 from parsers.code_validator import validate_submission
 from src.workflow import run_review_pipeline
+from src.agents import run_conversational_assistant
 from services.database import init_db, save_review_to_db, get_recent_reviews
 from rag.retriever import _get_or_build_faiss_index
 
@@ -88,8 +92,28 @@ def analyze_code_endpoint(submission: CodeSubmission):
             quality_findings=[FindingItem(**f) for f in res["quality_findings"]],
             security_findings=[FindingItem(**f) for f in res["security_findings"]],
             unified_findings=[FindingItem(**f) for f in res["unified_findings"]],
+            remediation_plan=[
+                RemediationPlanItem(**r) for r in res.get("remediation_plan", [])
+            ],
+            pr_summary_markdown=res.get("pr_summary_markdown", ""),
         )
         save_review_to_db(report.model_dump())
         return report
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/v1/chat", response_model=AssistantQueryResponse)
+def conversational_assistant_endpoint(req: AssistantQueryRequest):
+    try:
+        history_dicts = [m.model_dump() for m in req.chat_history]
+        result = run_conversational_assistant(
+            question=req.question,
+            language=req.language or "python",
+            code_context=req.code_context or "",
+            findings_context=req.findings_context or "",
+            chat_history=history_dicts,
+        )
+        return AssistantQueryResponse(**result)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

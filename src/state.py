@@ -15,3 +15,5 @@ class ReviewWorkflowState(TypedDict):
     security_findings: List[Dict[str, Any]]
     unified_findings: List[Dict[str, Any]]
     severity_breakdown: Dict[str, int]
+    remediation_plan: List[Dict[str, Any]]
+    pr_summary_markdown: str
