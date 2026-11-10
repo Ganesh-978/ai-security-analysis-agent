@@ -10,20 +10,12 @@ from llm.gemini_client import get_llm
 from llm.prompt_manager import (
     CODE_ANALYSIS_AGENT_PROMPT,
     SECURITY_VULNERABILITY_AGENT_PROMPT,
-    REMEDIATION_AGENT_PROMPT,
-    PR_SUMMARY_AGENT_PROMPT,
     CONVERSATIONAL_ASSISTANT_PROMPT,
 )
 from parsers.output_parser import parse_json_array
 
 VALID_SEVERITIES = {"Critical", "High", "Medium", "Low", "Informational"}
 SEVERITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Informational": 4}
-VALID_REC_CATEGORIES = {
-    "Security Recommendation",
-    "Code Quality Recommendation",
-    "Performance Recommendation",
-    "Maintainability Recommendation",
-}
 
 OWASP_TOP_10_MAP = {
     "access control": "OWASP A01 - Broken Access Control / CWE-284",
@@ -79,7 +71,7 @@ def _default_secure_fix_snippet(vuln_name: str, language: str, original_snippet:
         if "hardcoded" in v_lower or "secret" in v_lower or "password" in v_lower:
             return (
                 "import os\n"
-                '# Load sensitive credentials from environment variables or secret manager\n'
+                '# Load sensitive credentials from environment variables\n'
                 'SECRET_KEY = os.environ.get("APP_SECRET_KEY")'
             )
         if "command" in v_lower or "subprocess" in v_lower:
@@ -95,22 +87,19 @@ def _default_secure_fix_snippet(vuln_name: str, language: str, original_snippet:
                 "safe_value = ast.literal_eval(user_expression)"
             )
         if "xss" in v_lower or "scripting" in v_lower:
-            return (
-                "import html\n"
-                "safe_output = html.escape(user_input)"
-            )
+            return "import html\nsafe_output = html.escape(user_input)"
         if "exception" in v_lower or "error" in v_lower:
             return (
                 "import logging\n"
                 "try:\n"
                 "    conn.commit()\n"
-                "except sqlite3.Error as exc:\n"
-                '    logging.error("Database commit failed: %s", exc)'
+                "except Exception as exc:\n"
+                '    logging.error("Operation failed: %s", exc)'
             )
     else:
         if "sql" in v_lower:
             return (
-                "String sql = \"SELECT * FROM accounts WHERE username = ?\";\n"
+                'String sql = "SELECT * FROM accounts WHERE username = ?";\n'
                 "try (PreparedStatement pstmt = conn.prepareStatement(sql)) {\n"
                 "    pstmt.setString(1, userInput);\n"
                 "    ResultSet rs = pstmt.executeQuery();\n"
@@ -122,7 +111,7 @@ def _default_secure_fix_snippet(vuln_name: str, language: str, original_snippet:
             return 'MessageDigest md = MessageDigest.getInstance("SHA-256");'
         if "resource" in v_lower or "connection" in v_lower:
             return (
-                "try (Connection conn = DriverManager.getConnection(url, user, System.getenv(\"DB_PASS\"));\n"
+                'try (Connection conn = DriverManager.getConnection(url, user, System.getenv("DB_PASS"));\n'
                 "     PreparedStatement stmt = conn.prepareStatement(sql)) {\n"
                 "    // Execute query safely with automatic resource closure\n"
                 "}"
@@ -141,48 +130,42 @@ def static_analysis_and_rag_node(state: ReviewWorkflowState) -> Dict[str, Any]:
     metrics = compute_complexity_and_quality_metrics(code, lang)
     static_flags = run_static_pattern_scanners(code, lang)
 
-    qual_cats = ["clean_code", "python"] if lang == "python" else ["clean_code", "java"]
-    sec_cats = (
-        ["owasp", "cwe", "python"]
-        if lang == "python"
-        else ["owasp", "cwe", "cert", "java"]
-    )
-
     detected_alert_names = " ".join(
         {f.get("vulnerability_name", "") for f in static_flags}
     )
 
+    # Single combined FAISS query (embeds only 1 vector on CPU instead of 2)
     try:
-        qual_docs = search_knowledge_base(
-            query=f"{lang} clean code smells complexity PMD Pylint {detected_alert_names}:\n{code[:500]}",
-            k=3,
-            allowed_categories=qual_cats,
-        )
-        sec_docs = search_knowledge_base(
-            query=f"{lang} OWASP Top 10 CWE Bandit SpotBugs CERT security {detected_alert_names}:\n{code[:500]}",
+        docs = search_knowledge_base(
+            query=f"{lang} OWASP CWE clean code {detected_alert_names}:\n{code[:350]}",
             k=4,
-            allowed_categories=sec_cats,
         )
     except Exception:
-        qual_docs, sec_docs = [], []
+        docs = []
+
+    compact_chunks = [
+        f"[{d.metadata.get('source', 'KB')}]\n{d.page_content[:400]}" for d in docs
+    ]
 
     return {
         "numbered_code": numbered,
         "complexity_metrics": metrics["complexity_metrics"],
         "quality_assessment": metrics["quality_assessment"],
         "static_tool_flags": static_flags,
-        "quality_guidelines": [
-            f"[{d.metadata.get('source', 'KB')}]\n{d.page_content}" for d in qual_docs
-        ],
-        "security_guidelines": [
-            f"[{d.metadata.get('source', 'KB')}]\n{d.page_content}" for d in sec_docs
-        ],
+        "quality_guidelines": compact_chunks[:2],
+        "security_guidelines": compact_chunks,
     }
 
 
 def code_analysis_agent_node(state: ReviewWorkflowState) -> Dict[str, Any]:
     findings: List[Dict[str, Any]] = []
     lang = state["language"].lower()
+    qual_flags = [
+        f
+        for f in state.get("static_tool_flags", [])
+        if "Security" not in f.get("type", "")
+    ]
+
     try:
         llm = get_llm(temperature=0.1)
         chain = CODE_ANALYSIS_AGENT_PROMPT | llm
@@ -190,22 +173,16 @@ def code_analysis_agent_node(state: ReviewWorkflowState) -> Dict[str, Any]:
         static_summary = json.dumps(
             {
                 "complexity_metrics": state.get("complexity_metrics", {}),
-                "quality_assessment": state.get("quality_assessment", {}),
-                "static_flags": [
-                    f
-                    for f in state.get("static_tool_flags", [])
-                    if "Security" not in f.get("type", "")
-                ],
-            },
-            indent=2,
+                "static_flags": qual_flags,
+            }
         )
 
         res = chain.invoke({
             "filename": state["filename"],
             "language": state["language"],
-            "numbered_code": state["numbered_code"],
+            "numbered_code": state["numbered_code"][:3500],
             "static_context": static_summary,
-            "quality_guidelines": "\n\n".join(state.get("quality_guidelines", [])),
+            "quality_guidelines": "\n".join(state.get("quality_guidelines", [])),
         })
 
         parsed = parse_json_array(res.content)
@@ -214,9 +191,9 @@ def code_analysis_agent_node(state: ReviewWorkflowState) -> Dict[str, Any]:
                 item.get("vulnerability_name") or item.get("issue_type") or "Code Smell"
             )
             orig_snip = str(item.get("code_snippet", ""))
-            sug = str(item.get("secure_code_suggestion", "")) or _default_secure_fix_snippet(
-                v_name, lang, orig_snip
-            )
+            sug = str(
+                item.get("secure_code_suggestion", "")
+            ) or _default_secure_fix_snippet(v_name, lang, orig_snip)
             findings.append({
                 "id": str(item.get("id", f"QUAL-{idx:02d}")),
                 "agent_source": "Code Analysis Agent",
@@ -241,11 +218,6 @@ def code_analysis_agent_node(state: ReviewWorkflowState) -> Dict[str, Any]:
         pass
 
     if not findings:
-        qual_flags = [
-            f
-            for f in state.get("static_tool_flags", [])
-            if "Security" not in f.get("type", "")
-        ]
         for idx, qf in enumerate(qual_flags, start=1):
             v_name = qf.get("vulnerability_name", "Code Smell")
             orig_snip = qf.get("snippet", "")
@@ -265,7 +237,9 @@ def code_analysis_agent_node(state: ReviewWorkflowState) -> Dict[str, Any]:
                 "recommendation": qf.get(
                     "recommendation", "Refactor code according to Clean Code principles."
                 ),
-                "secure_code_suggestion": _default_secure_fix_snippet(v_name, lang, orig_snip),
+                "secure_code_suggestion": _default_secure_fix_snippet(
+                    v_name, lang, orig_snip
+                ),
             })
 
     return {"quality_findings": findings}
@@ -287,9 +261,9 @@ def security_vulnerability_agent_node(state: ReviewWorkflowState) -> Dict[str, A
         res = chain.invoke({
             "filename": state["filename"],
             "language": state["language"],
-            "numbered_code": state["numbered_code"],
-            "static_context": json.dumps(sec_flags, indent=2),
-            "security_guidelines": "\n\n".join(state.get("security_guidelines", [])),
+            "numbered_code": state["numbered_code"][:3500],
+            "static_context": json.dumps(sec_flags),
+            "security_guidelines": "\n".join(state.get("security_guidelines", [])),
         })
 
         parsed = parse_json_array(res.content)
@@ -304,9 +278,9 @@ def security_vulnerability_agent_node(state: ReviewWorkflowState) -> Dict[str, A
             )
             owasp_cat = _match_owasp_rule(v_name, str(item.get("owasp_category", "")))
             orig_snip = str(item.get("code_snippet", ""))
-            sug = str(item.get("secure_code_suggestion", "")) or _default_secure_fix_snippet(
-                v_name, lang, orig_snip
-            )
+            sug = str(
+                item.get("secure_code_suggestion", "")
+            ) or _default_secure_fix_snippet(v_name, lang, orig_snip)
 
             findings.append({
                 "id": str(item.get("id", f"SEC-{idx:02d}")),
@@ -351,7 +325,9 @@ def security_vulnerability_agent_node(state: ReviewWorkflowState) -> Dict[str, A
                 "recommendation": sf.get(
                     "recommendation", "Apply OWASP secure coding practices."
                 ),
-                "secure_code_suggestion": _default_secure_fix_snippet(v_name, lang, orig_snip),
+                "secure_code_suggestion": _default_secure_fix_snippet(
+                    v_name, lang, orig_snip
+                ),
             })
 
     return {"security_findings": findings}
@@ -389,7 +365,6 @@ def owasp_rule_matching_and_scoring_node(state: ReviewWorkflowState) -> Dict[str
     if debt_mins > 0:
         qa["technical_debt_minutes"] = debt_mins
 
-    # Compute Overall Code Health Score (0-100) combining maintainability & security penalties
     maint = float(qa.get("maintainability_score", 85.0))
     sec_penalty = (
         counts["Critical"] * 18.0
@@ -397,7 +372,9 @@ def owasp_rule_matching_and_scoring_node(state: ReviewWorkflowState) -> Dict[str
         + counts["Medium"] * 4.0
         + counts["Low"] * 1.5
     )
-    health_score = round(max(5.0, min(100.0, (maint * 0.55) + max(0.0, 45.0 - sec_penalty))), 1)
+    health_score = round(
+        max(5.0, min(100.0, (maint * 0.55) + max(0.0, 45.0 - sec_penalty))), 1
+    )
     qa["code_health_score"] = health_score
 
     return {
@@ -411,8 +388,8 @@ def owasp_rule_matching_and_scoring_node(state: ReviewWorkflowState) -> Dict[str
 def remediation_agent_node(state: ReviewWorkflowState) -> Dict[str, Any]:
     """
     AI Remediation Agent:
-    Generates root cause analysis, 4-category classification, best-practice explanation,
-    and corrected code examples for every flagged finding.
+    Synthesizes root cause analysis, 4-category classification, OWASP/CERT standard
+    references, and corrected code examples in <0.01s from the parallel agent findings.
     """
     unified = state.get("unified_findings", [])
     if not unified:
@@ -421,101 +398,52 @@ def remediation_agent_node(state: ReviewWorkflowState) -> Dict[str, Any]:
     lang = state["language"].lower()
     remediation_list: List[Dict[str, Any]] = []
 
-    try:
-        llm = get_llm(temperature=0.1)
-        chain = REMEDIATION_AGENT_PROMPT | llm
-        all_guidelines = state.get("security_guidelines", []) + state.get(
-            "quality_guidelines", []
+    for f in unified:
+        fid = f.get("id", "ISSUE-01")
+        is_sec = f.get("agent_source") == "Security Vulnerability Agent"
+        sub_cat = f.get("sub_category", "").lower()
+
+        if is_sec:
+            rec_cat = "Security Recommendation"
+        elif "complexity" in sub_cat:
+            rec_cat = "Performance Recommendation"
+        elif "anti-pattern" in sub_cat:
+            rec_cat = "Maintainability Recommendation"
+        else:
+            rec_cat = "Code Quality Recommendation"
+
+        v_name = f.get("vulnerability_name", "Issue")
+        orig_code = f.get("code_snippet", "")
+        corr_code = f.get("secure_code_suggestion") or _default_secure_fix_snippet(
+            v_name, lang, orig_code
+        )
+        std_ref = f.get("owasp_category") or f.get(
+            "tool_or_standard", "OWASP & SEI CERT Standard"
         )
 
-        res = chain.invoke({
-            "language": state["language"],
-            "code": state["code"],
-            "findings_json": json.dumps(unified, indent=2),
-            "rag_guidelines": "\n\n".join(all_guidelines[:5]),
+        remediation_list.append({
+            "finding_id": fid,
+            "issue_title": f.get("title", v_name),
+            "severity": f.get("severity", "Medium"),
+            "line_reference": f.get("line_reference", "N/A"),
+            "recommendation_category": rec_cat,
+            "root_cause": (
+                f"Unsafe or non-compliant implementation pattern ({v_name}) at "
+                f"{f.get('line_reference', 'code block')} violating {std_ref}."
+            ),
+            "why_it_occurs": f.get("description", ""),
+            "best_practice_guideline": std_ref,
+            "fix_steps": f.get(
+                "recommendation", "Apply the corrected code pattern shown below."
+            ),
+            "original_code": orig_code,
+            "corrected_code": corr_code,
         })
-        parsed = parse_json_array(res.content)
-        for item in parsed:
-            cat = str(item.get("recommendation_category", "Security Recommendation"))
-            if cat not in VALID_REC_CATEGORIES:
-                cat = (
-                    "Security Recommendation"
-                    if str(item.get("finding_id", "")).startswith("SEC")
-                    else "Code Quality Recommendation"
-                )
-            remediation_list.append({
-                "finding_id": str(item.get("finding_id", "ISSUE-01")),
-                "issue_title": str(item.get("issue_title", "Flagged Issue")),
-                "severity": _normalize_severity(item.get("severity", "High"), "High"),
-                "line_reference": str(item.get("line_reference", "N/A")),
-                "recommendation_category": cat,
-                "root_cause": str(
-                    item.get(
-                        "root_cause",
-                        "Missing input validation or adherence to secure design patterns.",
-                    )
-                ),
-                "why_it_occurs": str(item.get("why_it_occurs", "")),
-                "best_practice_guideline": str(
-                    item.get("best_practice_guideline", "OWASP Top 10 / Clean Code")
-                ),
-                "fix_steps": str(item.get("fix_steps", "")),
-                "original_code": str(item.get("original_code", "")),
-                "corrected_code": str(item.get("corrected_code", "")),
-            })
-    except Exception:
-        pass
-
-    # Ensure every single finding has a complete remediation entry (instant fallback/completion)
-    covered_ids = {r["finding_id"] for r in remediation_list}
-    for f in unified:
-        fid = f.get("id", "ISSUE")
-        if fid not in covered_ids:
-            is_sec = f.get("agent_source") == "Security Vulnerability Agent"
-            sub_cat = f.get("sub_category", "").lower()
-            if is_sec:
-                rec_cat = "Security Recommendation"
-            elif "complexity" in sub_cat:
-                rec_cat = "Performance Recommendation"
-            elif "anti-pattern" in sub_cat:
-                rec_cat = "Maintainability Recommendation"
-            else:
-                rec_cat = "Code Quality Recommendation"
-
-            v_name = f.get("vulnerability_name", "Issue")
-            orig_code = f.get("code_snippet", "")
-            corr_code = f.get("secure_code_suggestion") or _default_secure_fix_snippet(
-                v_name, lang, orig_code
-            )
-
-            remediation_list.append({
-                "finding_id": fid,
-                "issue_title": f.get("title", v_name),
-                "severity": f.get("severity", "Medium"),
-                "line_reference": f.get("line_reference", "N/A"),
-                "recommendation_category": rec_cat,
-                "root_cause": (
-                    f"Direct use of unvalidated/unsafe pattern ({v_name}) at {f.get('line_reference', 'code block')} "
-                    f"violating {f.get('owasp_category') or f.get('tool_or_standard', 'coding standards')}."
-                ),
-                "why_it_occurs": f.get("description", ""),
-                "best_practice_guideline": f.get("owasp_category")
-                or f.get("tool_or_standard", "OWASP & SEI CERT Standard"),
-                "fix_steps": f.get(
-                    "recommendation", "Apply the corrected code pattern shown below."
-                ),
-                "original_code": orig_code,
-                "corrected_code": corr_code,
-            })
 
     return {"remediation_plan": remediation_list}
 
 
 def pr_summary_agent_node(state: ReviewWorkflowState) -> Dict[str, Any]:
-    """
-    PR Summary Agent & AI Report Generator:
-    Compiles all findings, metrics, and remediations into a Pull Request style summary.
-    """
     unified = state.get("unified_findings", [])
     sev = state.get("severity_breakdown", {})
     qa = state.get("quality_assessment", {})
@@ -535,8 +463,6 @@ def pr_summary_agent_node(state: ReviewWorkflowState) -> Dict[str, Any]:
     sec_findings = state.get("security_findings", [])
     qual_findings = state.get("quality_findings", [])
 
-    # Build a deterministic, instantaneous, executive-grade PR summary
-    # (and optionally enrich via LLM if needed, avoiding slow double timeouts)
     lines = [
         f"## 🔍 Pull Request Review Summary — `{filename}` ({language})",
         f"**Review Verdict:** {verdict}  ",
@@ -601,26 +527,29 @@ def run_conversational_assistant(
     findings_context: str = "",
     chat_history: List[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    """
-    6-Step RAG Conversational Code Assistant:
-    1. Receive Question -> 2. Classify Intent -> 3. Retrieve RAG Docs ->
-    4. Generate Grounded Response -> 5. Return Answer + Sources -> 6. Preserve Multi-Turn Context
-    """
     intent = classify_question_intent(question)
     docs = search_knowledge_base(
         query=f"{language} {intent}: {question}",
-        k=4,
+        k=3,
     )
     kb_context = "\n\n".join(
-        [f"Source [{d.metadata.get('source', 'Knowledge Base')}]:\n{d.page_content}" for d in docs]
+        [
+            f"Source [{d.metadata.get('source', 'Knowledge Base')}]:\n{d.page_content[:500]}"
+            for d in docs
+        ]
     )
-    sources = sorted(list({d.metadata.get("source", "OWASP Knowledge Base") for d in docs}))
+    sources = sorted(
+        list({d.metadata.get("source", "OWASP Knowledge Base") for d in docs})
+    )
 
     history_str = ""
     if chat_history:
-        recent = chat_history[-6:]
+        recent = chat_history[-4:]
         history_str = "\n".join(
-            [f"{msg.get('role', 'user').upper()}: {msg.get('content', '')}" for msg in recent]
+            [
+                f"{msg.get('role', 'user').upper()}: {msg.get('content', '')[:300]}"
+                for msg in recent
+            ]
         )
 
     try:
@@ -629,18 +558,17 @@ def run_conversational_assistant(
         res = chain.invoke({
             "language": language,
             "kb_context": kb_context or "Standard OWASP Top 10 and Clean Code guidelines apply.",
-            "code_context": code_context[:2500] if code_context else "No code submitted yet.",
-            "findings_context": findings_context[:2500] if findings_context else "No findings flagged yet.",
+            "code_context": code_context[:1800] if code_context else "No code submitted yet.",
+            "findings_context": findings_context[:1800] if findings_context else "No findings flagged yet.",
             "history_context": history_str or "Start of conversation.",
             "intent": intent,
             "question": question,
         })
         answer_text = res.content
     except Exception:
-        # Reliable RAG fallback if LLM quota is reached during demo
         answer_text = (
             f"### Grounded Guidance ({intent})\n\n"
-            f"Based on the indexed **Secure Coding Knowledge Base**, here are the relevant standards for your query:\n\n"
+            f"Based on the indexed **Secure Coding Knowledge Base**, here are the relevant standards:\n\n"
             f"{kb_context if kb_context else 'Always validate inputs, use parameterized queries, avoid hardcoded credentials, and keep cyclomatic complexity low.'}"
         )
 

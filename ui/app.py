@@ -1,6 +1,7 @@
 ﻿import json
 import os
 import sys
+import time
 from pathlib import Path
 
 os.environ["TRANSFORMERS_NO_TORCHVISION"] = "1"
@@ -18,6 +19,7 @@ from reports.report_generator import generate_full_markdown_report
 from services.database import save_review_to_db, get_recent_reviews
 
 API_BASE = "http://127.0.0.1:8000"
+HEALTH_URL = f"{API_BASE}/health"
 ANALYZE_URL = f"{API_BASE}/api/v1/analyze"
 CHAT_URL = f"{API_BASE}/api/v1/chat"
 
@@ -40,6 +42,17 @@ if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "remediation_status" not in st.session_state:
     st.session_state.remediation_status = {}
+if "elapsed_seconds" not in st.session_state:
+    st.session_state.elapsed_seconds = None
+
+
+def _is_fastapi_online() -> bool:
+    try:
+        r = requests.get(HEALTH_URL, timeout=0.4)
+        return r.status_code == 200
+    except Exception:
+        return False
+
 
 SEVERITY_ICON = {
     "Critical": "🔴 **CRITICAL**",
@@ -124,10 +137,9 @@ with right_col:
             fname = filename or (
                 "snippet.py" if validation.detected_language == "python" else "Snippet.java"
             )
-            with st.spinner(
-                "Running Code Analysis, Security Vulnerability, Remediation, and PR Summary Agents..."
-            ):
-                try:
+            start_t = time.perf_counter()
+            with st.spinner("Running Parallel Multi-Agent Pipeline..."):
+                if _is_fastapi_online():
                     resp = requests.post(
                         ANALYZE_URL,
                         json={
@@ -135,13 +147,13 @@ with right_col:
                             "code": code_input,
                             "language": validation.detected_language,
                         },
-                        timeout=75,
+                        timeout=35,
                     )
                     if resp.status_code == 200:
                         st.session_state.review_report = resp.json()
                     else:
-                        raise RuntimeError(resp.text)
-                except Exception:
+                        st.error(f"Backend error: {resp.text}")
+                else:
                     from src.workflow import run_review_pipeline
 
                     raw_res = run_review_pipeline(
@@ -154,10 +166,14 @@ with right_col:
                     save_review_to_db(raw_res)
                     st.session_state.review_report = raw_res
 
+                st.session_state.elapsed_seconds = round(time.perf_counter() - start_t, 2)
                 st.session_state.submitted_code = code_input
                 st.session_state.remediation_status = {}
 
     if st.session_state.review_report:
+        if st.session_state.elapsed_seconds is not None:
+            st.caption(f"⚡ **Multi-Agent Analysis Completed in `{st.session_state.elapsed_seconds}s`**")
+
         rep = st.session_state.review_report
         sev = rep.get("severity_breakdown", {})
         cm = rep.get("complexity_metrics", {})
@@ -168,7 +184,6 @@ with right_col:
         rem_list = rep.get("remediation_plan", [])
         lang = rep.get("language", validation.detected_language)
 
-        # Calculate Human-in-the-Loop Fix Progress
         total_issues = len(unified)
         resolved_count = sum(
             1
@@ -177,7 +192,6 @@ with right_col:
         )
         progress_pct = int((resolved_count / total_issues) * 100) if total_issues > 0 else 100
 
-        # Top KPI Summary Row
         k1, k2, k3, k4, k5 = st.columns(5)
         k1.metric("🏥 Code Health Score", f"{qa.get('code_health_score', 80.0)}/100")
         k2.metric("🔎 Total Issues", total_issues)
@@ -195,7 +209,6 @@ with right_col:
             "🗄️ History",
         ])
 
-        # TAB 1: Enterprise Severity Dashboard (Charts + KPIs)
         with t_dash:
             st.markdown("##### 🔺 Issues by Severity Level")
             s1, s2, s3, s4, s5 = st.columns(5)
@@ -235,7 +248,6 @@ with right_col:
             m3.info(f"**Time Complexity:** {cm.get('time_complexity', 'O(1)')}")
             m4.info(f"**Tech Debt:** {qa.get('technical_debt_minutes', 0)} mins")
 
-        # TAB 2: Unified Findings Display Module
         with t_find:
             filter_type = st.radio(
                 "Filter Findings:",
@@ -268,7 +280,6 @@ with right_col:
                     st.markdown(f"**Risk & Impact Description:**\n{item['description']}")
                     st.markdown(f"**Quick Recommendation:**\n{item.get('recommendation', '')}")
 
-        # TAB 3: AI Remediation Agent & Human-in-the-Loop Validation
         with t_rem:
             st.caption(
                 "AI Remediation Agent: Explains root causes, retrieves OWASP/CERT standards, "
@@ -301,7 +312,6 @@ with right_col:
                         st.markdown("✅ **Corrected Secure Code:**")
                         st.code(r.get("corrected_code", ""), language=lang)
 
-                    # Human-in-the-Loop Collaboration Control
                     new_status = st.selectbox(
                         f"Human-in-the-Loop Review Decision ({fid}):",
                         [
@@ -320,18 +330,15 @@ with right_col:
                     )
                     st.session_state.remediation_status[fid] = new_status
 
-        # TAB 4: Pull Request Review Summary
         with t_pr:
             st.markdown(rep.get("pr_summary_markdown", ""))
 
-        # TAB 5: RAG-Powered Conversational Code Assistant
         with t_chat:
             st.markdown("##### 💬 RAG-Powered Conversational Code Assistant")
             st.caption(
                 "Ask follow-up questions about flagged vulnerabilities, code smells, or OWASP best practices."
             )
 
-            # Quick-Ask Preset Buttons from Presentation Slide 4
             q_cols = st.columns(3)
             preset_questions = [
                 "Explain this vulnerability.",
@@ -353,7 +360,7 @@ with right_col:
                 st.session_state.chat_history.append({"role": "user", "content": active_question})
                 with st.spinner("Searching OWASP Knowledge Base & generating response..."):
                     findings_summary = json.dumps(unified[:6])
-                    try:
+                    if _is_fastapi_online():
                         c_resp = requests.post(
                             CHAT_URL,
                             json={
@@ -363,13 +370,10 @@ with right_col:
                                 "findings_context": findings_summary,
                                 "chat_history": st.session_state.chat_history[:-1],
                             },
-                            timeout=45,
+                            timeout=25,
                         )
-                        if c_resp.status_code == 200:
-                            ans_payload = c_resp.json()
-                        else:
-                            raise RuntimeError(c_resp.text)
-                    except Exception:
+                        ans_payload = c_resp.json()
+                    else:
                         from src.agents import run_conversational_assistant
 
                         ans_payload = run_conversational_assistant(
@@ -393,7 +397,6 @@ with right_col:
                 with st.chat_message(msg["role"]):
                     st.markdown(msg["content"])
 
-        # TAB 6: Exportable Code Review Report (.md & .json)
         with t_exp:
             st.markdown("##### 📥 Export Structured Code Review Report")
             md_report = generate_full_markdown_report(rep)
@@ -414,7 +417,6 @@ with right_col:
             with st.expander("Preview Markdown Report"):
                 st.markdown(md_report)
 
-        # TAB 7: SQLite Historical Reviews
         with t_hist:
             st.caption("SQLite Database (`data/reviews.db`) — Historical Code Quality & Security Trends")
             history_rows = get_recent_reviews(limit=15)

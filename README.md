@@ -1,312 +1,305 @@
+<div align="center">
+
 # 🛡️ AI Code Review & Security Analysis Agent
 
-![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python)
-![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi)
-![Streamlit](https://img.shields.io/badge/Frontend-Streamlit-FF4B4B?logo=streamlit)
-![LangGraph](https://img.shields.io/badge/Orchestration-LangGraph%20%7C%20LangChain-1C3C3C)
-![RAG](https://img.shields.io/badge/Vector%20RAG-ChromaDB%20%2B%20FAISS-orange)
-![SAST](https://img.shields.io/badge/SAST-AST%20%7C%20Tree--sitter%20%7C%20Bandit-critical)
+**Multi-Agent SAST, Automated Code Quality Inspection, AI Remediation & RAG Developer Assistant for Python and Java**
 
-An enterprise-grade, multi-agent **Static Application Security Testing (SAST)** and **Automated Code Quality Review** platform for **Python** and **Java**. Built using a **6-Layer AI Security Architecture** and orchestrated with **LangGraph**, the system combines deterministic static code analysis (**AST**, **Tree-sitter**, **Bandit**, **Semgrep**, **Pylint**, **SpotBugs**, **PMD**, **Checkstyle**, **Radon**) with **Retrieval-Augmented Generation (RAG)** over an indexed **OWASP Top 10, CWE, SEI CERT, and Clean Code Knowledge Base** (**ChromaDB**, **FAISS**, and **Sentence Transformers**).
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
+[![RAG](https://img.shields.io/badge/RAG-ChromaDB%20%2B%20FAISS-FF6F00?style=for-the-badge)](https://www.trychroma.com/)
+[![SAST](https://img.shields.io/badge/SAST-AST%20%7C%20Tree--sitter%20%7C%20Bandit-D32F2F?style=for-the-badge)](https://github.com/PyCQA/bandit)
 
----
+[Overview](#-1-overview--problem-statement) •
+[Architecture](#-2-6-layer-system-architecture) •
+[Multi-Agent Workflow](#-3-end-to-end-multi-agent-workflow) •
+[Core Agents](#-4-core-agents--capabilities) •
+[Quickstart](#-7-installation--quickstart) •
+[API Reference](#-10-rest-api-specification)
 
-## 📖 Table of Contents
-
-1. [Problem Statement & Project Objective](#-1-problem-statement--project-objective)
-2. [6-Layer System Architecture](#-2-6-layer-system-architecture)
-3. [7-Stage Multi-Agent Execution Workflow](#-3-7-stage-multi-agent-execution-workflow)
-4. [Core Agents & Technical Capabilities](#-4-core-agents--technical-capabilities)
-5. [Technology Stack & Tooling Matrix](#-5-technology-stack--tooling-matrix)
-6. [Repository Directory Structure](#-6-repository-directory-structure)
-7. [Installation & Environment Setup](#-7-installation--environment-setup)
-8. [Running the Platform](#-8-running-the-platform)
-9. [Live Demonstration Walkthrough (Evaluation Guide)](#-9-live-demonstration-walkthrough-evaluation-guide)
-10. [REST API Specification](#-10-rest-api-specification)
-11. [Agile Milestone Roadmap](#-11-agile-milestone-roadmap)
+</div>
 
 ---
 
-## 🎯 1. Problem Statement & Project Objective
+## 🎯 1. Overview & Problem Statement
 
-Software engineering teams frequently face inconsistent code quality, undetected security vulnerabilities, and slow, subjective manual code reviews. Developers often lack immediate access to contextual secure coding standards and actionable remediation guidance during active development—leaving critical vulnerabilities undetected until late in the software development lifecycle (SDLC).
+Engineering teams frequently face inconsistent code quality, undetected security vulnerabilities, and slow, subjective manual code reviews. Developers often lack immediate access to contextual secure coding standards and actionable remediation guidance during active development—leaving critical vulnerabilities and design flaws undetected until late in the software development lifecycle (SDLC).
 
-### Key Objectives
-* **Deterministic Syntax Gatekeeping**: Automatically detect whether submitted code is **Python** or **Java** and validate syntax structure using **AST** and **Tree-sitter** before invoking downstream AI agents.
-* **Hybrid SAST + LLM Reasoning**: Combine static rule scanners with parallel LLM agents so findings are both deterministic (exact line numbers) and context-aware (exploit impact and refactored code).
-* **Grounded RAG Knowledge Base**: Index **OWASP Top 10 (A01–A10)**, **CWE**, **SEI CERT**, **Bandit**, **PMD**, **SpotBugs**, and **Clean Code** guidelines locally using **Sentence Transformers (`all-MiniLM-L6-v2`)**, **ChromaDB**, and **FAISS**.
-* **Actionable Developer Portal**: Deliver a split-screen **Streamlit** interface backed by **FastAPI** and **SQLite** with 5-tier severity scoring, 4-dimensional complexity metrics, and best-practice code suggestions.
+**AI Code Review & Security Analysis Agent** is a multi-agent platform that automates static code inspection, OWASP vulnerability detection, root-cause remediation, pull-request summarization, and interactive developer Q&A in **under 15 seconds**.
+
+### ✨ Key Highlights
+* **Syntax Gatekeeper (`AST` + `Tree-sitter`)**: Automatically detects **Python** or **Java** from pasted code or uploaded files and validates syntax trees before invoking downstream AI agents.
+* **Hybrid SAST + Parallel LangGraph Agents**: Combines deterministic static scanners (`Bandit`, `Semgrep`, `Pylint`, `Radon`, `SpotBugs`, `PMD`, `Checkstyle`) with parallel LLM reasoning so findings include exact line numbers, severity scores, and exploit explanations.
+* **AI Remediation & Human-in-the-Loop Controls**: Explains root causes, classifies fixes across 4 recommendation categories (*Security, Code Quality, Performance, Maintainability*), provides side-by-side corrected code, and tracks developer approval status.
+* **PR Summary & Exportable Reports**: Generates pull-request review verdicts, an overall **Code Health Score (`0–100`)**, interactive severity charts, and downloadable **Markdown (`.md`)** and **JSON (`.json`)** reports.
+* **RAG Conversational Code Assistant**: Multi-turn chat assistant grounded in an indexed **OWASP Top 10 (A01–A10)**, **CWE**, **SEI CERT**, and **Clean Code** knowledge base powered by **Sentence Transformers (`all-MiniLM-L6-v2`)**, **ChromaDB**, and in-memory **FAISS**.
 
 ---
 
 ## 🏗️ 2. 6-Layer System Architecture
 
-The platform is engineered around a modular 6-layer architecture:
-
 | Layer | Architectural Layer | Core Responsibilities & Technologies |
 | :--- | :--- | :--- |
-| **Layer 1** | **Code Input & Syntax Gatekeeper** | Accepts pasted code or `.py` / `.java` file uploads. Automatically detects language and validates grammar via Python `ast` and `Tree-sitter` (`tree-sitter-python`, `tree-sitter-java`). |
+| **Layer 1** | **Code Input & Syntax Gatekeeper** | Accepts pasted code or `.py` / `.java` uploads. Auto-detects language and validates grammar via Python `ast` and `Tree-sitter` (`tree-sitter-python`, `tree-sitter-java`). |
 | **Layer 2** | **Static Analysis Engine (SAST)** | Executes non-execution static analysis across Python (`Bandit`, `Semgrep`, `Pylint`, `Radon`), Java (`SpotBugs`, `PMD`, `Checkstyle`), and Enterprise (`SonarQube`, `Snyk`) rule patterns. |
-| **Layer 3** | **Multi-Agent AI Orchestration** | Coordinates parallel agent execution (`StateGraph` fan-out / fan-in) using `LangGraph` and `LangChain`. |
+| **Layer 3** | **Multi-Agent AI Orchestration** | Coordinates parallel agent fan-out/fan-in and sequential remediation/reporting pipelines using `LangGraph` and `LangChain`. |
 | **Layer 4** | **LLM Processing & Vector RAG** | Grounds `Google Gemini` (`gemini-2.5-flash`) in curated security standards stored in `ChromaDB` and searched in-memory via `FAISS` using `HuggingFaceEmbeddings` (`sentence-transformers/all-MiniLM-L6-v2`). |
-| **Layer 5** | **Severity Scoring & Report Engine** | Computes Code Quality Assessment scores, 4 complexity metrics, and classifies findings across the 5-tier Severity Pyramid (`Critical`, `High`, `Medium`, `Low`, `Informational`). |
-| **Layer 6** | **User Interface & Persistence** | Split-screen `Streamlit` developer portal decoupled via a `FastAPI` REST backend with automated audit persistence in `SQLite` (`data/reviews.db`). |
+| **Layer 5** | **Remediation, Scoring & Reporting** | Computes **Code Health Score (`0–100`)**, 4 complexity metrics, 5-tier severity breakdown, root-cause remediation plans, PR summaries, and exportable `.md` / `.json` reports. |
+| **Layer 6** | **Developer Portal & Persistence** | Split-screen `Streamlit` developer portal decoupled via a `FastAPI` REST backend with automated audit history stored in `SQLite` (`data/reviews.db`). |
 
 ---
 
-## 🔄 3. 7-Stage Multi-Agent Execution Workflow
+## 🔄 3. End-to-End Multi-Agent Workflow
 
-~~~text
-+-------------------------------------------------------------------------+
-| Stage 1: Developer Submits Source Code (Paste or .py / .java Upload)    |
-+-------------------------------------------------------------------------+
-                                    |
-                                    v
-+-------------------------------------------------------------------------+
-| Stage 2: Auto-Language Detection & AST / Tree-sitter Syntax Gatekeeper  |
-|          -> If Syntax Invalid: Block Pipeline & Highlight Exact Line    |
-+-------------------------------------------------------------------------+
-                                    | (Valid Syntax)
-                                    v
-+-------------------------------------------------------------------------+
-| Stage 3: Layer 2 SAST Scan + Layer 4 RAG Retrieval (ChromaDB -> FAISS)  |
-+-------------------------------------------------------------------------+
-                                    |
-             +----------------------+----------------------+
-             | (Parallel Fan-Out via LangGraph StateGraph) |
-             v                                             v
-+-----------------------------------+   +---------------------------------+
-| Stage 3A: Code Analysis Agent     |   | Stage 4: Security Vulnerability |
-| - Code Smells & Linting           |   |          Agent (SAST + LLM)     |
-| - 4 Complexity Metrics            |   | - Full OWASP Top 10 (A01-A10)   |
-| - 6 Design Anti-Patterns          |   | - CWE / CERT / Bandit / SpotBugs|
-| - Best Practice Validation        |   | - 8 Secure Coding Guidelines    |
-+-----------------------------------+   +---------------------------------+
-             |                                             |
-             +----------------------+----------------------+
-                                    | (Parallel Fan-In)
-                                    v
-+-------------------------------------------------------------------------+
-| Stage 5: OWASP Top 10 (A01-A10) & CWE Standard Rule Matching            |
-+-------------------------------------------------------------------------+
-                                    |
-                                    v
-+-------------------------------------------------------------------------+
-| Stage 6: Severity Scoring Engine & Technical Debt Calculation           |
-|          (Critical | High | Medium | Low | Informational)               |
-+-------------------------------------------------------------------------+
-                                    |
-                                    v
-+-------------------------------------------------------------------------+
-| Stage 7: Unified Findings Report Generation (SQLite + Streamlit Portal) |
-+-------------------------------------------------------------------------+
-~~~
+```text
++-----------------------------------------------------------------------------+
+| 1. Developer Submits Code (Paste in Editor or Upload .py / .java File)      |
++-----------------------------------------------------------------------------+
+                                      |
+                                      v
++-----------------------------------------------------------------------------+
+| 2. Auto-Language Detection & AST / Tree-sitter Syntax Gatekeeper            |
+|    -> If Syntax Invalid: Block Pipeline Immediately & Show Exact Line Error |
++-----------------------------------------------------------------------------+
+                                      | (Valid Syntax)
+                                      v
++-----------------------------------------------------------------------------+
+| 3. SAST Pattern Scan + In-Memory FAISS Retrieval from ChromaDB Vectors      |
++-----------------------------------------------------------------------------+
+                                      |
+               +----------------------+----------------------+
+               |  (Parallel Fan-Out via LangGraph StateGraph) |
+               v                                             v
++-------------------------------------+   +-----------------------------------+
+| 4A. Code Analysis Agent             |   | 4B. Security Vulnerability Agent  |
+| - Code Smells & Linting Rules       |   | - Full OWASP Top 10 (A01-A10)     |
+| - 4 Complexity Metrics              |   | - CWE / CERT / Bandit / SpotBugs  |
+| - 6 Design Anti-Patterns            |   | - 8 Secure Coding Guidelines      |
++-------------------------------------+   +-----------------------------------+
+               |                                             |
+               +----------------------+----------------------+
+                                      | (Parallel Fan-In)
+                                      v
++-----------------------------------------------------------------------------+
+| 5. OWASP Rule Matcher & Severity Scoring Engine                             |
+|    (Critical | High | Medium | Low | Informational + Code Health Score)     |
++-----------------------------------------------------------------------------+
+                                      |
+                                      v
++-----------------------------------------------------------------------------+
+| 6. AI Remediation Agent                                                     |
+|    - Root Cause Analysis & "Why It Occurs" Explanation                      |
+|    - 4 Categories: Security | Code Quality | Performance | Maintainability  |
+|    - Side-by-Side Flagged vs. Corrected Code + Human-in-the-Loop Approval   |
++-----------------------------------------------------------------------------+
+                                      |
+                                      v
++-----------------------------------------------------------------------------+
+| 7. PR Summary Agent & Report Generator (.md / .json)                        |
+|    + Interactive Severity Dashboard + Multi-Turn RAG Code Assistant         |
++-----------------------------------------------------------------------------+
+```
 
 ---
 
-## 🧠 4. Core Agents & Technical Capabilities
+## 🧠 4. Core Agents & Capabilities
 
-### A. Code Analysis Agent
-Evaluates structural quality, maintainability, and software design without executing the code:
-1. **Four Dimensions of Code Complexity**:
-   * **Cyclomatic Complexity**: Quantifies independent decision paths (`if`, `for`, `while`, `case`, `catch`) and assigns a maintainability risk rank (`A` through `F`).
-   * **Cognitive Complexity**: Measures human readability and penalizes deeply nested control flow structures.
-   * **Time Complexity**: Estimates asymptotic execution time growth ($\mathcal{O}(1)$, $\mathcal{O}(n)$, $\mathcal{O}(n^2)$, $\mathcal{O}(n^k)$) from loop nesting depth.
-   * **Space Complexity**: Estimates auxiliary memory allocation growth ($\mathcal{O}(1)$ vs. $\mathcal{O}(n)$).
-2. **Six Common Design Anti-Patterns**:
-   * **God Object**: Single class centralizing excessive methods and responsibilities.
-   * **Spaghetti Code**: Deeply nested, unstructured control logic.
-   * **Blob Class**: Data-heavy class dominating application state and behavior.
-   * **Lava Flow**: Dead, commented-out, or experimental legacy code left in production.
-   * **Golden Hammer**: Overuse of awkward or inappropriate constructs.
-   * **Copy-Paste Programming**: Duplicated code blocks violating DRY principles.
-3. **Code Quality Assessment Metrics**:
-   * **Maintainability Score** ($0\text{--}100$)
-   * **Complexity Health Score** ($0\text{--}100$)
-   * **Code Duplication Percentage** ($\%$)
-   * **Documentation & Comment Coverage** ($\%$)
-   * **Estimated Technical Debt** (in minutes)
+### 1️⃣ Code Analysis Agent
+Evaluates structural quality, maintainability, and design patterns without executing the program:
+* **Four Dimensions of Code Complexity**:
+  * **Cyclomatic Complexity**: Measures decision paths (`if`, `for`, `while`, `case`, `catch`) and assigns a risk rank (`A` to `F`).
+  * **Cognitive Complexity**: Evaluates human understandability and penalizes deep control-flow nesting.
+  * **Time Complexity**: Estimates Big-O execution time growth ($\mathcal{O}(1)$, $\mathcal{O}(n)$, $\mathcal{O}(n^2)$, $\mathcal{O}(n^k)$).
+  * **Space Complexity**: Estimates auxiliary memory allocation growth ($\mathcal{O}(1)$ vs. $\mathcal{O}(n)$).
+* **Six Common Design Anti-Patterns**: *God Object*, *Spaghetti Code*, *Blob Class*, *Lava Flow*, *Golden Hammer*, and *Copy-Paste Programming*.
+* **Quality Telemetry**: *Overall Code Health Score ($0\text{--}100$)*, *Maintainability Score ($0\text{--}100$)*, *Complexity Score ($0\text{--}100$)*, *Duplication %*, *Documentation Coverage %*, and *Estimated Technical Debt (mins)*.
 
-### B. Security Vulnerability Agent
+### 2️⃣ Security Vulnerability Agent
 Combines SAST pattern matching with RAG-grounded LLM analysis across **all OWASP Top 10 (A01–A10)** categories and **8 Core Secure Coding Guidelines**:
 * **OWASP Top 10 & CWE Coverage**:
-  * **A01: Broken Access Control** (CSRF `CWE-352`, Path Traversal `CWE-22`, Overly Permissive Permissions `CWE-732`, IDOR)
+  * **A01: Broken Access Control** (CSRF `CWE-352`, Path Traversal `CWE-22`, Overly Permissive Permissions `CWE-732`)
   * **A02: Cryptographic Failures** (Hardcoded Secrets `CWE-798`, Weak Hashing `MD5`/`SHA-1` `CWE-328`, Weak Ciphers `DES`/`ECB` `CWE-327`, Insecure PRNG `CWE-338`)
   * **A03: Injection** (SQL Injection `CWE-89`, Cross-Site Scripting / XSS `CWE-79`, OS Command Injection `CWE-78`, Code Injection `eval`/`exec` `CWE-95`)
-  * **A04: Insecure Design** (Missing validation & business logic flaws)
+  * **A04: Insecure Design** (Missing validation & workflow flaws)
   * **A05: Security Misconfiguration** (Debug mode enabled `CWE-489`, SSL/TLS verification disabled `CWE-295`, XML External Entity / XXE `CWE-611`)
   * **A06: Vulnerable & Outdated Components** (Deprecated/unsafe APIs)
   * **A07: Identification & Authentication Failures** (Unverified JWT signatures `CWE-347`, hardcoded passwords)
   * **A08: Software & Data Integrity Failures** (Insecure deserialization via `pickle`, `yaml.load`, `ObjectInputStream` `CWE-502`)
   * **A09: Security Logging & Monitoring Failures** (Swallowed security exceptions `CWE-390`, improper error handling)
   * **A10: Server-Side Request Forgery (SSRF)** (Unvalidated outbound HTTP requests `CWE-918`)
-* **6 Mandatory Structured Security Report Fields per Finding**:
-  1. **Vulnerability Name** (Standardized classification)
-  2. **Severity Level** (`Critical`, `High`, `Medium`, `Low`, `Informational`)
-  3. **Affected Line Number** (Exact line reference in source file)
-  4. **Risk Description** (Plain-language explanation of exploit mechanics and impact)
-  5. **Recommendation** (Actionable remediation steps grounded in OWASP/CERT standards)
-  6. **Secure Coding Suggestion** (Refactored, copy-ready secure code snippet)
+* **6 Structured Report Fields per Finding**: *(1) Vulnerability Name*, *(2) Severity Level*, *(3) Affected Line Number*, *(4) Risk Description*, *(5) Recommendation*, and *(6) Secure Coding Suggestion*.
+
+### 3️⃣ AI Remediation Agent & Human-in-the-Loop Collaboration
+Bridges the gap between issue detection and resolution:
+* **Root Cause & Impact Analysis**: Explains *why* the issue exists in the code and how attackers or runtime edge cases can trigger it.
+* **4 Recommendation Categories**: Classifies every fix into **Security**, **Code Quality**, **Performance**, or **Maintainability** recommendations.
+* **Side-by-Side Code Diffs**: Displays the flagged lines alongside copy-ready, standards-compliant replacement code in Python or Java.
+* **Human-in-the-Loop Controls**: Allows developers and team leads to mark each fix as *Pending Review*, *Approved & Applied*, *Team Lead Approved*, or *Rejected (Intentional Business Logic)*, dynamically updating the **Fix Progress %** KPI.
+
+### 4️⃣ PR Summary Agent & Report Generator
+Compiles all multi-agent outputs into a structured Pull Request review summary containing:
+1. **Project Information & Release Verdict** (*Approved*, *Approved with Minor Recommendations*, or *Changes Requested*)
+2. **Code Quality & Complexity Summary**
+3. **Security Vulnerability Summary**
+4. **Code Smell & Anti-Pattern Summary**
+5. **Severity Breakdown & Prioritized Fix Roadmap** (Exportable as `.md` and `.json`)
+
+### 5️⃣ RAG-Powered Conversational Code Assistant
+An interactive multi-turn chat assistant grounded in the indexed `knowledge_base/`:
+* **Intent Recognition**: Automatically classifies developer queries (*Vulnerability Explanation*, *Remediation & Secure Code Generation*, *Code Smell Guidance*, *Static Warning Diagnosis*).
+* **Context-Aware Multi-Turn Memory**: Retains conversation history alongside the active source file and flagged findings.
+* **Grounded Citations**: Cites the exact knowledge base source files (`owasp`, `cwe`, `cert`, `python`, `java`, `clean_code`) used to generate each answer.
 
 ---
 
 ## 🛠️ 5. Technology Stack & Tooling Matrix
 
-| Category | Tools & Libraries Used | Role in Project |
+| Category | Tools & Libraries | Purpose |
 | :--- | :--- | :--- |
-| **Multi-Agent & LLM** | `LangGraph`, `LangChain`, `Google Gemini` | Parallel agent state machine orchestration and contextual vulnerability reasoning. |
-| **Vector Store & Search** | `ChromaDB`, `FAISS` (`faiss-cpu`) | `ChromaDB` persists document embeddings on disk; `FAISS` performs fast in-memory similarity search. |
-| **Embeddings** | `Sentence Transformers`, `HuggingFaceEmbeddings` | Local embedding generation via `sentence-transformers/all-MiniLM-L6-v2`. |
-| **Document Ingestion** | `Unstructured`, `PyPDF`, `Markdown` | Loads `.md` and `.pdf` security standards from `knowledge_base/`. |
-| **Syntax & AST Parsing** | Python `ast`, `Tree-sitter` | Builds syntax trees for Python and Java to validate grammar and count AST nodes. |
-| **Python SAST & Quality** | `Bandit`, `Semgrep`, `Pylint`, `Radon`, `Ruff` | Scans Python code for security flaws, complexity, and PEP8/maintainability issues. |
-| **Java SAST & Quality** | `SpotBugs`, `PMD`, `Checkstyle`, `SEI CERT` | Detects Java resource leaks, SQLi, weak crypto, empty catch blocks, and naming violations. |
-| **Enterprise Standards** | `SonarQube`, `Snyk`, `OWASP Top 10`, `CWE` | Maps findings to enterprise continuous-inspection and vulnerability classifications. |
-| **Backend & Storage** | `FastAPI`, `Uvicorn`, `SQLite3`, `Pydantic` | RESTful API service layer, strict schema validation, and persistent review history. |
-| **Frontend Portal** | `Streamlit` | Interactive split-screen developer portal with live validation and tabbed reports. |
+| **Agent Orchestration** | `LangGraph`, `LangChain`, `Google Gemini` | Parallel multi-agent workflow, remediation synthesis, and conversational Q&A. |
+| **Vector DB & Search** | `ChromaDB`, `FAISS` (`faiss-cpu`) | `ChromaDB` persists embeddings on disk; cached `FAISS` executes sub-millisecond similarity search. |
+| **Embeddings** | `Sentence Transformers`, `HuggingFaceEmbeddings` | Local CPU embedding generation using `sentence-transformers/all-MiniLM-L6-v2`. |
+| **Document Loaders** | `Unstructured`, `PyPDF`, `Markdown` | Parses `.md` and `.pdf` security guidelines during RAG ingestion. |
+| **Syntax & AST Parsing** | Python `ast`, `Tree-sitter` | Builds syntax trees for Python and Java to validate syntax and count AST nodes. |
+| **Python SAST & Quality** | `Bandit`, `Semgrep`, `Pylint`, `Radon`, `Ruff` | Detects Python security vulnerabilities, cyclomatic complexity, and code smells. |
+| **Java SAST & Quality** | `SpotBugs`, `PMD`, `Checkstyle`, `SEI CERT` | Detects Java resource leaks, SQLi, weak crypto, empty catch blocks, and naming issues. |
+| **Backend & Database** | `FastAPI`, `Uvicorn`, `SQLite3`, `Pydantic` | Asynchronous REST API endpoints, strict schema validation, and review audit storage. |
+| **Developer Portal** | `Streamlit`, `Pandas` | Split-screen UI with severity bar charts, KPI cards, remediation diff viewer, and chat interface. |
 
 ---
 
 ## 📂 6. Repository Directory Structure
 
-~~~text
+```text
 ai-security-analysis-agent/
-├── .streamlit/
-│   └── config.toml                  # Streamlit server & file-watcher configuration
 ├── data/
-│   ├── chroma_db/                   # Persistent ChromaDB vector database storage
-│   └── reviews.db                   # SQLite database storing historical review reports
+│   ├── chroma_db/                   # Persistent ChromaDB vector store
+│   └── reviews.db                   # SQLite database for historical review records
 ├── knowledge_base/                  # Curated Secure Coding & Quality Knowledge Base
 │   ├── cert/                        # SEI CERT Oracle Secure Coding Standard for Java
 │   ├── clean_code/                  # Clean Code, Refactoring & Design Anti-Pattern rules
 │   ├── cwe/                         # CWE Top Software Weaknesses specifications
 │   ├── java/                        # PMD & SpotBugs Java static analysis rules
 │   ├── owasp/                       # OWASP Top 10 (A01-A10) security guidelines
-│   └── python/                      # Bandit & Python secure coding rules
+│   └── python/                      # Bandit & Python secure coding guidelines
 ├── llm/
-│   ├── gemini_client.py             # Google Gemini ChatModel initialization & retry config
-│   └── prompt_manager.py            # Structured system prompts for Code & Security Agents
+│   ├── gemini_client.py             # Google Gemini ChatModel initialization & timeout config
+│   └── prompt_manager.py            # System prompts for Code, Security, Remediation, PR & Chat Agents
 ├── models/
-│   └── schemas.py                   # Pydantic data models for validation, metrics & reports
+│   └── schemas.py                   # Pydantic schemas for findings, remediation, chat & reports
 ├── parsers/
-│   ├── code_validator.py            # Auto Python/Java language detector + AST/Tree-sitter gatekeeper
-│   └── output_parser.py             # Resilient JSON array extractor for agent responses
+│   ├── code_validator.py            # Auto Python/Java detector + AST & Tree-sitter gatekeeper
+│   └── output_parser.py             # Resilient JSON array parser for LLM outputs
 ├── rag/
 │   ├── chroma_db.py                 # ChromaDB persistent client & FAISS index helpers
-│   ├── chunking.py                  # RecursiveCharacterTextSplitter semantic chunking
+│   ├── chunking.py                  # RecursiveCharacterTextSplitter semantic chunker
 │   ├── embeddings.py                # Singleton HuggingFaceEmbeddings (all-MiniLM-L6-v2)
-│   ├── ingestion.py                 # Offline ETL pipeline to index knowledge_base/ into ChromaDB
+│   ├── ingestion.py                 # Offline ETL script to index knowledge_base/ into ChromaDB
 │   ├── loader.py                    # UnstructuredMarkdownLoader (.md) & PyPDFLoader (.pdf)
-│   └── retriever.py                 # High-speed cached FAISS retrieval over ChromaDB embeddings
+│   └── retriever.py                 # In-memory cached FAISS similarity search over ChromaDB vectors
+├── reports/
+│   └── report_generator.py          # Structured Markdown & JSON report generator
 ├── sample_codes/
-│   ├── vulnerable_python_sample.py  # Python test sample with known OWASP flaws & code smells
-│   └── VulnerableJavaSample.java    # Java test sample with known SpotBugs/PMD/CERT flaws
+│   ├── vulnerable_python_sample.py  # Python sample containing known OWASP flaws & code smells
+│   └── VulnerableJavaSample.java    # Java sample containing known SpotBugs/PMD/CERT flaws
 ├── services/
-│   ├── api.py                       # FastAPI REST endpoints (/health, /api/v1/analyze, /api/v1/history)
-│   └── database.py                  # SQLite database initialization & CRUD operations
+│   ├── api.py                       # FastAPI service (/health, /api/v1/analyze, /api/v1/chat, /api/v1/history)
+│   └── database.py                  # SQLite persistence layer for review history
 ├── src/
-│   ├── agents.py                    # SAST/RAG node, Code Agent, Security Agent & Scoring Engine
-│   ├── state.py                     # LangGraph ReviewWorkflowState TypedDict schema
-│   └── workflow.py                  # Parallel LangGraph StateGraph compilation & runner
+│   ├── agents.py                    # Implementation of all 5 AI agents + OWASP rule matcher
+│   ├── state.py                     # LangGraph ReviewWorkflowState TypedDict definition
+│   └── workflow.py                  # LangGraph StateGraph orchestration pipeline
 ├── tests/
-│   └── test_milestone2_agents.py    # Automated accuracy validation script for Python & Java
+│   └── test_agents.py               # Automated test suite for syntax validation & agent detection
 ├── tools/
-│   └── static_analyzer.py           # Layer 2 SAST scanner, 4-complexity & quality metric engine
+│   └── static_analyzer.py           # In-memory SAST scanner, 4-complexity & quality metric engine
 ├── ui/
-│   └── app.py                       # Split-screen Streamlit developer dashboard
-├── .env                             # Environment variables (API keys & paths - gitignored)
-├── .gitignore                       # Excludes .venv, .env, __pycache__, and local .db files
-├── pyproject.toml                   # Project metadata and uv dependency lock configuration
-├── requirements.txt                 # Required Python libraries
+│   └── app.py                       # Split-screen Streamlit developer portal & chat interface
+├── .env                             # Environment variables (gitignored)
+├── .gitignore                       # Ignores .venv, .env, __pycache__, and *.db files
+├── pyproject.toml                   # Project metadata and uv lock configuration
+├── requirements.txt                 # Python dependencies
 └── README.md                        # Project documentation
-~~~
+```
 
 ---
 
-## ⚙️ 7. Installation & Environment Setup
+## ⚙️ 7. Installation & Quickstart
 
-### Step 1: Clone the Repository
-~~~powershell
-git clone https://github.com/Ganesh-978/ai-security-analysis-agent.git
+### 1. Clone the Repository
+```powershell
+git clone [https://github.com/Ganesh-978/ai-security-analysis-agent.git](https://github.com/Ganesh-978/ai-security-analysis-agent.git)
 cd ai-security-analysis-agent
-~~~
+```
 
-### Step 2: Create & Activate Virtual Environment
-~~~powershell
+### 2. Create & Activate Virtual Environment
+```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-~~~
+```
 
-### Step 3: Install Required Dependencies
-Using `pip` or `uv`:
-~~~powershell
+### 3. Install Dependencies
+```powershell
 pip install -r requirements.txt
-uv add tree-sitter tree-sitter-python tree-sitter-java bandit radon
-~~~
+uv add tree-sitter tree-sitter-python tree-sitter-java bandit radon fastapi uvicorn
+```
 
-### Step 4: Configure Environment Variables (`.env`)
-Create a `.env` file in the root directory of the project:
-~~~env
+### 4. Configure Environment Variables (`.env`)
+Create a `.env` file in the project root:
+```env
 GOOGLE_API_KEY=your_google_gemini_api_key_here
 GEMINI_MODEL_NAME=gemini-2.5-flash
 EMBEDDING_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
 CHROMA_PERSIST_DIR=./data/chroma_db
 FAISS_INDEX_DIR=./data/faiss_index
-~~~
+```
 
-### Step 5: Index the Knowledge Base into ChromaDB
-Run the RAG ingestion pipeline once to load, chunk, embed, and store all `.md` and `.pdf` documents from `knowledge_base/` into `./data/chroma_db`:
-~~~powershell
-python rag/ingestion.py
-~~~
+### 5. Index the Secure Coding Knowledge Base
+Run the ingestion script once to chunk, embed, and index all `.md` and `.pdf` guidelines from `knowledge_base/` into ChromaDB:
+```powershell
+.\.venv\Scripts\python.exe rag/ingestion.py
+```
 
 ---
 
 ## 🚀 8. Running the Platform
 
-Open two terminals in VS Code with your `.venv` activated:
+Open two terminals in VS Code inside the project root:
 
-### Terminal 1: Start the FastAPI Backend Server
-~~~powershell
-uvicorn services.api:app --reload --host 127.0.0.1 --port 8000
-~~~
-* **Backend API URL**: `http://127.0.0.1:8000`
-* **Interactive Swagger UI**: `http://127.0.0.1:8000/docs`
+### Terminal 1 — Start the FastAPI Backend Server
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn services.api:app --reload --host 127.0.0.1 --port 8000
+```
+* **API Base URL**: `http://127.0.0.1:8000`
+* **Swagger Docs**: `http://127.0.0.1:8000/docs`
 
-### Terminal 2: Launch the Streamlit Developer Portal
-~~~powershell
-streamlit run ui/app.py
-~~~
-* **Streamlit Web App**: `http://localhost:8501`
-
-### Run Automated Detection Accuracy Tests (Optional)
-~~~powershell
-python tests/test_milestone2_agents.py
-~~~
+### Terminal 2 — Launch the Streamlit Developer Portal
+```powershell
+.\.venv\Scripts\python.exe -m streamlit run ui/app.py --server.fileWatcherType none
+```
+* **Developer Portal URL**: `http://localhost:8501`
 
 ---
 
-## 🖥️ 9. Live Demonstration Walkthrough (Evaluation Guide)
+## 🖥️ 9. Live Demo Walkthrough
 
-Follow these steps during project evaluation to demonstrate all system capabilities:
-
-1. **Automatic Language Detection & AST / Tree-sitter Gatekeeper**:
-   * Paste any Python or Java snippet into the left-hand editor (or upload `sample_codes/vulnerable_python_sample.py` or `sample_codes/VulnerableJavaSample.java`).
-   * Point out the live status bar showing **Auto-Detected Language (`Python` or `Java`)**, **Parser Used (`AST / Tree-sitter`)**, and **Syntax Tree Node Count**.
-2. **Syntax Error Blocking**:
-   * Intentionally remove a colon `:` in Python or a semicolon `;` in Java.
-   * Show that the **Syntax Gatekeeper** immediately flags the exact line number and offending statement and blocks the multi-agent pipeline from executing.
-3. **Parallel Multi-Agent Execution & Severity Scoring**:
-   * Fix the syntax error and click **"🚀 Run SAST + Parallel Multi-Agent Analysis"**.
-   * On the right panel, highlight:
-     * **Stage 6 Severity Scoring Breakdown** (`Critical`, `High`, `Medium`, `Low`, `Informational`).
-     * **Code Quality Assessment Metrics** (`Maintainability Score`, `Complexity Score`, `Duplication %`, `Documentation %`, and `Technical Debt`).
-     * **Four Complexity Metrics** (`Cyclomatic`, `Cognitive`, `Time Complexity`, `Space Complexity`).
-4. **Structured 6-Field Security & Quality Reports**:
-   * Open the **Unified Findings Report**, **Security Vulnerability Report**, **Code Analysis Report**, and **SAST & Linter Alerts** tabs.
-   * Expand any finding card to show the 6 mandatory report fields, including the matched **OWASP Top 10 / CWE / Bandit / SpotBugs rule** and the refactored **Secure Coding Suggestion**.
-5. **SQLite Audit Persistence**:
-   * Open the **SQLite History** tab to show all completed reviews persisted inside `data/reviews.db`.
+1. **Auto Language Detection & Syntax Gatekeeper**:
+   * Paste Python or Java code in the left editor or upload `sample_codes/vulnerable_python_sample.py` / `sample_codes/VulnerableJavaSample.java`.
+   * Observe the live badge displaying the detected language (`Python` or `Java`), active parser (`AST / Tree-sitter`), and syntax tree node count.
+   * Introduce a syntax error (e.g., remove a `:` in Python or `;` in Java) to verify that the **Syntax Gatekeeper** blocks execution and highlights the exact line number.
+2. **Full Multi-Agent Analysis & Severity Dashboard**:
+   * Click **"🚀 Run Full Multi-Agent Code Review"**.
+   * Review the top KPI banner (**Code Health Score**, **Total Issues**, **Security vs. Quality Split**, **Fix Progress %**, and execution timer).
+   * In the **`📊 Severity Dashboard`** tab, inspect the **Severity Distribution** and **Security vs. Code Quality** bar charts alongside the 4 complexity cards (*Cyclomatic, Cognitive, Time, Space*).
+3. **AI Remediation & Human-in-the-Loop Approval**:
+   * Open the **`🛠️ AI Remediation`** tab to view the **Root Cause Analysis**, **Why This Issue Occurs**, **4-Category Classification**, and side-by-side **Flagged vs. Corrected Code**.
+   * Change the **Human-in-the-Loop Review Decision** dropdown to *Approved & Applied* and watch the **Fix Progress %** KPI update automatically.
+4. **PR Summary & Report Export**:
+   * Open **`📝 PR Summary`** to view the formatted pull-request verdict and prioritized fix roadmap.
+   * Open **`📥 Export Report`** to download the full review as a `.md` or `.json` file.
+5. **RAG Conversational Code Assistant**:
+   * Open **`💬 Conversational Assistant`**, click any preset prompt (e.g., *"How do I fix SQL Injection?"*) or ask a custom follow-up question about your code, and inspect the grounded response with cited OWASP/CERT sources.
 
 ---
 
@@ -314,26 +307,25 @@ Follow these steps during project evaluation to demonstrate all system capabilit
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `GET` | `/health` | Returns service health status and architecture version. |
-| `POST` | `/api/v1/analyze` | Validates code syntax, runs Layer 2 SAST + Layer 3 Parallel LangGraph Agents, saves to SQLite, and returns the structured `AnalysisReport`. |
-| `GET` | `/api/v1/history` | Fetches the 10 most recent code review summaries from the SQLite database. |
+| `GET` | `/health` | Returns backend service health status (`{"status": "ok"}`). |
+| `POST` | `/api/v1/analyze` | Validates syntax, runs SAST + Parallel Code & Security Agents + Remediation Agent + PR Summary Agent, saves to SQLite, and returns `CodeReviewReport`. |
+| `POST` | `/api/v1/chat` | Processes multi-turn developer questions via RAG similarity search over ChromaDB/FAISS and returns `AssistantQueryResponse` with detected intent and sources. |
+| `GET` | `/api/v1/history` | Returns the most recent code review audit records from `data/reviews.db`. |
 
 ---
 
-## 📈 11. Agile Milestone Roadmap
+## 📈 11. Agile Project Roadmap
 
-* ✅ **Milestone 1 (Sprint 1 — Weeks 1–2)**:
-  * Studied OWASP Top 10, CWE, SEI CERT, and Clean Code standards.
-  * Designed modular repository structure and Pydantic schemas (`models/schemas.py`).
+* ✅ **Sprint 1 (Milestone 1 — Weeks 1–2): Foundation, Syntax Gatekeeper & OWASP RAG Pipeline**
+  * Designed modular 6-layer architecture and Pydantic schemas (`models/schemas.py`).
   * Built Code Submission Module with automatic Python/Java detection and syntax validation (`parsers/code_validator.py`).
   * Built Secure Coding Knowledge Base & RAG pipeline using `Unstructured`, `PyPDF`, `Sentence Transformers`, `ChromaDB`, and `FAISS` (`rag/`).
-* ✅ **Milestone 2 (Sprint 2 — Weeks 3–4)**:
-  * Implemented Layer 2 SAST & Complexity Engine (`Tree-sitter`, `AST`, `Bandit`, `Radon`, `SpotBugs`/`PMD`/`Checkstyle` rules in `tools/static_analyzer.py`).
-  * Built `Code Analysis Agent` and `Security Vulnerability Agent` with 6-field structured reporting (`src/agents.py`).
-  * Implemented parallel multi-agent orchestration in `LangGraph` (`src/workflow.py`) with OWASP Rule Matching and Severity Scoring Engine.
-  * Integrated decoupled `FastAPI` backend (`services/api.py`), `SQLite` persistence (`services/database.py`), and enhanced `Streamlit` portal (`ui/app.py`).
-* ⏳ **Milestone 3 (Upcoming — Weeks 5–6)**:
-  * Dedicated `Remediation Agent` for automated full-file patch generation.
-  * `PR Summary Agent` for pull-request ready markdown summaries.
-  * RAG-powered `Conversational Code Assistant` for interactive Q&A on flagged findings.
-  * Exportable PDF, Markdown, and JSON compliance reports.
+* ✅ **Sprint 2 (Milestone 2 — Weeks 3–4): SAST Engine & Parallel Detection Agents**
+  * Integrated `Tree-sitter` and built the SAST & 4-Complexity Engine (`tools/static_analyzer.py`).
+  * Implemented `Code Analysis Agent` and `Security Vulnerability Agent` running in parallel via `LangGraph` (`src/agents.py`, `src/workflow.py`).
+  * Added OWASP Top 10 (A01–A10) rule matching, 5-tier severity scoring, `FastAPI` backend (`services/api.py`), and `SQLite` persistence (`services/database.py`).
+* ✅ **Sprint 3 (Milestone 3 — Weeks 5–6): AI Remediation, PR Summary, Dashboard & RAG Assistant**
+  * Built `AI Remediation Agent` with root-cause analysis, 4 recommendation categories, side-by-side corrected code, and Human-in-the-Loop approval controls.
+  * Built `PR Summary Agent` and `Report Generator` (`reports/report_generator.py`) with `.md` and `.json` export.
+  * Added the interactive `Severity Dashboard` with **Code Health Score (`0–100`)** and visual charts.
+  * Built the multi-turn `RAG Conversational Code Assistant` (`/api/v1/chat`) and optimized end-to-end pipeline speed to complete in under 15 seconds.
