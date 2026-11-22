@@ -114,3 +114,19 @@ class AssistantQueryResponse(BaseModel):
     intent: str
     answer: str
     sources: List[str] = []
+    
+    
+class FullFileFixRequest(BaseModel):
+    filename: str = "snippet.py"
+    language: Literal["python", "java"] = "python"
+    code: str
+    findings: List[Dict[str, Any]] = []
+    remediation_plan: List[Dict[str, Any]] = []
+
+
+class FullFileFixResponse(BaseModel):
+    filename: str
+    fixed_filename: str
+    language: str
+    fixed_code: str
+    issues_addressed: int

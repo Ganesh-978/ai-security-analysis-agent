@@ -163,3 +163,19 @@ Recent Conversation History:
     ),
     ("human", "Developer Question (Detected Intent: {intent}):\n{question}"),
 ])
+FULL_FILE_FIX_PROMPT = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        """You are a Principal Security & Software Engineer. Rewrite the provided {language} source file to fix EVERY security vulnerability, OWASP violation, code smell, and complexity issue listed below.
+
+STRICT OUTPUT RULES:
+1. Return ONLY the complete, runnable, production-ready {language} source code for the entire file.
+2. Do NOT include markdown code fences (no ```python or ```java), no introductory text, and no explanations.
+3. Do NOT truncate code or use placeholders such as "...", "# rest of code", or "// existing implementation".
+4. Preserve all original function/class/method names, parameters, and intended business behavior while replacing insecure patterns (e.g., use parameterized SQL queries, os.environ/System.getenv for secrets, shell=False list args, ast.literal_eval instead of eval, SHA-256/bcrypt instead of MD5, try-with-resources in Java, structured logging instead of empty catch/except blocks, and guard clauses to reduce nesting).""",
+    ),
+    (
+        "human",
+        "Filename: {filename}\nLanguage: {language}\n\nOriginal Source Code:\n{code}\n\nDetected Findings & Remediations to Apply:\n{findings_json}",
+    ),
+])

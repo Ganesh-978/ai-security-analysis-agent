@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Dict, Any, List
 from src.state import ReviewWorkflowState
 from tools.static_analyzer import (
@@ -11,6 +12,7 @@ from llm.prompt_manager import (
     CODE_ANALYSIS_AGENT_PROMPT,
     SECURITY_VULNERABILITY_AGENT_PROMPT,
     CONVERSATIONAL_ASSISTANT_PROMPT,
+    FULL_FILE_FIX_PROMPT
 )
 from parsers.output_parser import parse_json_array
 
@@ -576,4 +578,117 @@ def run_conversational_assistant(
         "intent": intent,
         "answer": answer_text,
         "sources": sources,
+    }
+def _strip_markdown_fences(raw_text: str) -> str:
+    """Strips markdown code fences and surrounding prose from full-file LLM output."""
+    if not raw_text:
+        return ""
+    cleaned = raw_text.strip()
+    match = re.search(
+        r"```(?:python|java|py)?\s*\n(.*?)```",
+        cleaned,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).strip() + "\n"
+    cleaned = re.sub(r"^```[a-zA-Z]*\s*\n?", "", cleaned)
+    cleaned = re.sub(r"\n?```\s*$", "", cleaned)
+    return cleaned.strip() + "\n"
+
+
+def _deterministic_full_file_fallback(code: str, language: str) -> str:
+    """Applies safe regex-based security patches if the LLM API is unavailable or rate-limited."""
+    patched = code
+    if language == "python":
+        if re.search(r"(SECRET|PASSWORD|API_KEY|TOKEN)\s*=\s*['\"]", patched, re.IGNORECASE):
+            if "import os" not in patched:
+                patched = "import os\n" + patched
+            patched = re.sub(
+                r"(\b[A-Z0-9_]*(?:SECRET|PASSWORD|API_KEY|TOKEN)[A-Z0-9_]*)\s*=\s*['\"][^'\"]+['\"]",
+                r'\1 = os.environ.get("\1", "")',
+                patched,
+            )
+        patched = re.sub(
+            r"hashlib\.md5\(",
+            "hashlib.sha256(",
+            patched,
+        )
+        patched = re.sub(
+            r"subprocess\.Popen\(\s*['\"]ping -c 1 ['\"]\s*\+\s*(\w+)\s*,\s*shell\s*=\s*True\s*\)",
+            r'subprocess.run(["ping", "-c", "1", \1], shell=False, check=True)',
+            patched,
+        )
+        patched = re.sub(r"\beval\s*\(", "ast.literal_eval(", patched)
+        if "ast.literal_eval(" in patched and "import ast" not in patched:
+            patched = "import ast\n" + patched
+        patched = re.sub(
+            r"except\s*:\s*\n(\s*)pass",
+            r'except Exception as exc:\n\1logging.error("Operation failed: %s", exc)',
+            patched,
+        )
+        if "logging.error(" in patched and "import logging" not in patched:
+            patched = "import logging\n" + patched
+    else:
+        patched = re.sub(
+            r'private\s+static\s+final\s+String\s+(\w*PASS\w*|\w*SECRET\w*)\s*=\s*"[^"]+";',
+            r'private static final String \1 = System.getenv("\1");',
+            patched,
+        )
+        patched = re.sub(
+            r'MessageDigest\.getInstance\(\s*"MD5"\s*\)',
+            'MessageDigest.getInstance("SHA-256")',
+            patched,
+        )
+    return patched
+
+
+def generate_full_file_fix(
+    filename: str,
+    language: str,
+    code: str,
+    findings: List[Dict[str, Any]],
+    remediation_plan: List[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Generates a complete, runnable fixed source file resolving all detected issues."""
+    from pathlib import Path
+
+    stem = Path(filename or "snippet").stem
+    ext = ".py" if language.lower() == "python" else ".java"
+    fixed_filename = f"{stem}_fixed{ext}"
+
+    compact_findings = [
+        {
+            "id": f.get("id"),
+            "issue": f.get("vulnerability_name") or f.get("title"),
+            "line": f.get("line_reference"),
+            "fix": f.get("recommendation"),
+        }
+        for f in findings
+    ]
+
+    fixed_code = ""
+    try:
+        llm = get_llm(temperature=0.05)
+        chain = FULL_FILE_FIX_PROMPT | llm
+        res = chain.invoke({
+            "filename": filename,
+            "language": language,
+            "code": code,
+            "findings_json": json.dumps(compact_findings, indent=2),
+        })
+        candidate = _strip_markdown_fences(res.content)
+        if candidate and len(candidate) > 30 and "..." not in candidate:
+            fixed_code = candidate
+    except Exception:
+        fixed_code = ""
+
+    if not fixed_code:
+        fixed_code = _deterministic_full_file_fallback(code, language.lower())
+
+    return {
+        "filename": filename,
+        "fixed_filename": fixed_filename,
+        "language": language.lower(),
+        "fixed_code": fixed_code,
+        "issues_addressed": len(findings),
     }

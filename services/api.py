@@ -18,10 +18,12 @@ from models.schemas import (
     RemediationPlanItem,
     AssistantQueryRequest,
     AssistantQueryResponse,
+    FullFileFixRequest,
+    FullFileFixResponse,
 )
 from parsers.code_validator import validate_submission
 from src.workflow import run_review_pipeline
-from src.agents import run_conversational_assistant
+from src.agents import run_conversational_assistant,generate_full_file_fix
 from services.database import init_db, save_review_to_db, get_recent_reviews
 from rag.retriever import _get_or_build_faiss_index
 
@@ -115,5 +117,18 @@ def conversational_assistant_endpoint(req: AssistantQueryRequest):
             chat_history=history_dicts,
         )
         return AssistantQueryResponse(**result)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+@app.post("/api/v1/fix-all", response_model=FullFileFixResponse)
+def fix_all_issues_endpoint(req: FullFileFixRequest):
+    try:
+        result = generate_full_file_fix(
+            filename=req.filename,
+            language=req.language,
+            code=req.code,
+            findings=req.findings,
+            remediation_plan=req.remediation_plan,
+        )
+        return FullFileFixResponse(**result)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
