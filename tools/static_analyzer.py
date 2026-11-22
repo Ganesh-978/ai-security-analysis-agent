@@ -5,41 +5,139 @@ from collections import Counter
 from typing import Dict, Any, List
 
 
-def _estimate_time_and_space_complexity(code: str, language: str) -> Dict[str, str]:
-    lines = code.splitlines()
+def _strip_comments_and_strings(code: str, language: str) -> str:
+    """Removes comments and string literals so complexity counters inspect executable code only."""
+    if language == "python":
+        no_triple = re.sub(r'"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'', '""', code)
+        no_str = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', '""', no_triple)
+        return re.sub(r"#.*$", "", no_str, flags=re.MULTILINE)
+    no_block = re.sub(r"/\*[\s\S]*?\*/", "", code)
+    no_line = re.sub(r"//.*$", "", no_block, flags=re.MULTILINE)
+    return re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', '""', no_line)
+
+
+def compute_complexity_and_quality_metrics(code: str, language: str) -> Dict[str, Any]:
+    """
+    Computes industry-standard complexity and ISO/IEC 25010 quality telemetry:
+    - McCabe Cyclomatic Complexity (per-function peak & average via AST)
+    - Sonar-style Cognitive Complexity (penalizes deep nesting, rewards modular decomposition)
+    - Asymptotic Time & Space Big-O Complexity
+    - Maintainability Index, Complexity Health, Duplication %, Documentation %, Technical Debt
+    """
+    raw_lines = code.splitlines()
+    non_empty_lines = [ln for ln in raw_lines if ln.strip()]
+    total_loc = max(len(non_empty_lines), 1)
+
+    cyclomatic_avg = 1
+    cyclomatic_max = 1
+    cognitive = 0
     max_loop_depth = 0
-    current_depth = 0
 
     if language == "python":
         try:
             tree = ast.parse(code)
+            func_ccs: List[int] = []
 
-            def _walk_loops(node, depth=0):
+            def _calc_cognitive(node: ast.AST, depth: int = 0) -> int:
+                score = 0
+                for child in ast.iter_child_nodes(node):
+                    if isinstance(child, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.ExceptHandler, ast.IfExp)):
+                        score += 1 + depth
+                        score += _calc_cognitive(child, depth + 1)
+                    elif isinstance(child, ast.BoolOp):
+                        score += 1
+                        score += _calc_cognitive(child, depth)
+                    else:
+                        score += _calc_cognitive(child, depth)
+                return score
+
+            def _walk_loops(node: ast.AST, depth: int = 0) -> None:
                 nonlocal max_loop_depth
-                if isinstance(node, (ast.For, ast.While, ast.ListComp, ast.DictComp)):
+                if isinstance(node, (ast.For, ast.AsyncFor, ast.While, ast.ListComp, ast.DictComp, ast.GeneratorExp)):
                     depth += 1
                     max_loop_depth = max(max_loop_depth, depth)
                 for child in ast.iter_child_nodes(node):
                     _walk_loops(child, depth)
 
             _walk_loops(tree)
+
+            func_nodes = [
+                n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            ]
+            if func_nodes:
+                func_cogs = []
+                for fn in func_nodes:
+                    cc = 1
+                    for child in ast.walk(fn):
+                        if isinstance(child, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.ExceptHandler, ast.IfExp)):
+                            cc += 1
+                        elif isinstance(child, ast.BoolOp):
+                            cc += len(child.values) - 1
+                    func_ccs.append(cc)
+                    func_cogs.append(_calc_cognitive(fn, 0))
+                cyclomatic_max = max(func_ccs)
+                cyclomatic_avg = round(sum(func_ccs) / len(func_ccs))
+                cognitive = max(func_cogs)
+            else:
+                cc = 1
+                for child in ast.walk(tree):
+                    if isinstance(child, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.ExceptHandler, ast.IfExp)):
+                        cc += 1
+                    elif isinstance(child, ast.BoolOp):
+                        cc += len(child.values) - 1
+                cyclomatic_max = cc
+                cyclomatic_avg = cc
+                cognitive = _calc_cognitive(tree, 0)
         except Exception:
-            max_loop_depth = 1
+            cyclomatic_max, cyclomatic_avg = 1, 1
     else:
-        for line in lines:
-            stripped = line.strip()
-            if re.match(r"^(for|while)\s*\(", stripped):
-                current_depth += 1
-                max_loop_depth = max(max_loop_depth, current_depth)
-            if "}" in stripped and current_depth > 0:
-                current_depth = max(0, current_depth - 1)
+        clean_code = _strip_comments_and_strings(code, "java")
+        method_bodies = re.split(
+            r"\b(?:public|private|protected)\s+(?:static\s+)?[\w<>\[\]]+\s+\w+\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\{",
+            clean_code,
+        )
+        body_chunks = method_bodies[1:] if len(method_bodies) > 1 else [clean_code]
+        branch_kw = r"\b(if|else\s+if|for|while|case|catch)\b|&&|\|\||\?"
+        ccs = [1 + len(re.findall(branch_kw, chunk)) for chunk in body_chunks]
+        cyclomatic_max = max(ccs) if ccs else 1
+        cyclomatic_avg = round(sum(ccs) / max(len(ccs), 1))
+
+        max_cog = 0
+        for chunk in body_chunks:
+            cog = 0
+            depth = 0
+            loop_d = 0
+            for ln in chunk.splitlines():
+                s = ln.strip()
+                if not s:
+                    continue
+                if re.match(r"^(for|while)\s*\(", s):
+                    loop_d += 1
+                    max_loop_depth = max(max_loop_depth, loop_d)
+                if re.search(r"^(if|else\s+if|for|while|catch|switch)\b", s):
+                    cog += 1 + depth
+                    depth += 1
+                if s.startswith("}") or s.endswith("}"):
+                    depth = max(0, depth - 1)
+                    loop_d = max(0, loop_d - 1)
+            max_cog = max(max_cog, cog)
+        cognitive = max_cog
+
+    if cyclomatic_max <= 5:
+        cc_rank = "A (Low Risk / Simple)"
+    elif cyclomatic_max <= 10:
+        cc_rank = "B (Moderate Complexity)"
+    elif cyclomatic_max <= 15:
+        cc_rank = "C (High Complexity)"
+    else:
+        cc_rank = "D/F (Very High Risk - Refactor Required)"
 
     if max_loop_depth == 0:
         time_comp = "O(1) - Constant Time"
     elif max_loop_depth == 1:
         time_comp = "O(n) - Linear Time"
     elif max_loop_depth == 2:
-        time_comp = "O(n²) - Quadratic Time"
+        time_comp = "O(n^2) - Quadratic Time"
     else:
         time_comp = f"O(n^{max_loop_depth}) - Polynomial Time"
 
@@ -50,76 +148,61 @@ def _estimate_time_and_space_complexity(code: str, language: str) -> Dict[str, s
         )
     )
     space_comp = "O(n) - Linear Space" if has_collection_alloc else "O(1) - Constant Auxiliary Space"
-    return {"time_complexity": time_comp, "space_complexity": space_comp}
-
-
-def compute_complexity_and_quality_metrics(code: str, language: str) -> Dict[str, Any]:
-    lines = [ln for ln in code.splitlines() if ln.strip()]
-    total_loc = max(len(lines), 1)
-
-    branch_keywords = r"\b(if|elif|else\s+if|for|while|case|catch|except|and|or)\b|&&|\|\||\?"
-    decisions = len(re.findall(branch_keywords, code))
-    cyclomatic = 1 + decisions
-
-    if cyclomatic <= 5:
-        cc_rank = "A (Low Risk / Simple)"
-    elif cyclomatic <= 10:
-        cc_rank = "B (Moderate Complexity)"
-    elif cyclomatic <= 20:
-        cc_rank = "C (High Complexity)"
-    else:
-        cc_rank = "D/F (Very High Risk - Refactor Required)"
-
-    cognitive = 0
-    nesting = 0
-    for raw_line in code.splitlines():
-        stripped = raw_line.strip()
-        if not stripped or stripped.startswith(("#", "//", "/*", "*")):
-            continue
-        if language == "python":
-            indent_spaces = len(raw_line) - len(raw_line.lstrip(" "))
-            nesting = indent_spaces // 4
-        else:
-            if stripped.endswith("{"):
-                nesting += 1
-            elif stripped.startswith("}"):
-                nesting = max(0, nesting - 1)
-
-        if re.search(r"^(if|elif|else|for|while|try|except|catch|switch)\b", stripped):
-            cognitive += 1 + max(0, nesting - 1)
-
-    ts = _estimate_time_and_space_complexity(code, language)
 
     normalized_lines = [
         ln.strip()
-        for ln in lines
-        if len(ln.strip()) > 12 and not ln.strip().startswith(("#", "//", "import ", "from ", "{", "}"))
+        for ln in non_empty_lines
+        if len(ln.strip()) > 16
+        and not ln.strip().startswith(("#", "//", "/*", "*", "import ", "from ", "{", "}", '"""', "'''"))
     ]
     counts = Counter(normalized_lines)
     duplicate_lines = sum(cnt - 1 for cnt in counts.values() if cnt > 1)
     duplication_pct = round((duplicate_lines / total_loc) * 100, 1)
 
-    comment_lines = len(re.findall(r"(^\s*#|^\s*//|^\s*\*|\"\"\"|\'\'\')", code, flags=re.MULTILINE))
-    doc_score = round(min(100.0, (comment_lines / max(1, total_loc * 0.18)) * 100), 1)
+    doc_lines = 0
+    in_doc = False
+    for ln in raw_lines:
+        s = ln.strip()
+        if s.startswith(("#", "//", "/*", "*")):
+            doc_lines += 1
+        elif '"""' in s or "'''" in s:
+            doc_lines += 1
+            if s.count('"""') == 1 or s.count("'''") == 1:
+                in_doc = not in_doc
+        elif in_doc:
+            doc_lines += 1
+    doc_score = round(min(100.0, (doc_lines / max(1, total_loc * 0.16)) * 100), 1)
 
-    raw_mi = 100.0 - (cyclomatic * 1.8) - (cognitive * 1.2) - (duplication_pct * 0.7) - (math.log(total_loc) * 3.5)
-    maintainability_score = round(max(10.0, min(100.0, raw_mi + (doc_score * 0.1))), 1)
-    complexity_health_score = round(max(5.0, 100.0 - (cyclomatic * 3.0) - (cognitive * 1.5)), 1)
+    complexity_health_score = round(
+        max(10.0, min(100.0, 100.0 - max(0, cyclomatic_max - 2) * 4.5 - max(0, cognitive - 3) * 2.5)),
+        1,
+    )
+    raw_mi = (
+        98.0
+        - max(0, cyclomatic_avg - 2) * 3.0
+        - max(0, cognitive - 3) * 1.8
+        - duplication_pct * 0.8
+        - max(0.0, math.log(max(total_loc, 10)) - 2.3) * 4.0
+        + (doc_score * 0.08)
+    )
+    maintainability_score = round(max(15.0, min(100.0, raw_mi)), 1)
 
     return {
         "complexity_metrics": {
-            "cyclomatic_complexity": cyclomatic,
+            "cyclomatic_complexity": cyclomatic_max,
             "cyclomatic_rank": cc_rank,
             "cognitive_complexity": cognitive,
-            "time_complexity": ts["time_complexity"],
-            "space_complexity": ts["space_complexity"],
+            "time_complexity": time_comp,
+            "space_complexity": space_comp,
         },
         "quality_assessment": {
             "maintainability_score": maintainability_score,
             "complexity_score": complexity_health_score,
             "duplication_percentage": duplication_pct,
             "documentation_score": doc_score,
-            "technical_debt_minutes": max(5, int((cyclomatic + cognitive) * 3 + duplicate_lines * 5)),
+            "technical_debt_minutes": max(
+                0, int(max(0, cyclomatic_max - 4) * 5 + max(0, cognitive - 5) * 3 + duplicate_lines * 5)
+            ),
         },
     }
 
@@ -142,12 +225,12 @@ def run_static_pattern_scanners(code: str, language: str) -> List[Dict[str, str]
             "Enable CSRF protection middleware and require anti-CSRF tokens on POST/PUT/DELETE requests.",
         ),
         (
-            r"(open\s*\(\s*.*\+|send_file\s*\(\s*.*\+|new\s+File\s*\(\s*.*\+|Paths\.get\s*\(\s*.*\+)",
+            r"(\bopen\s*\(\s*.*\+|\bsend_file\s*\(\s*.*\+|\bnew\s+File\s*\(\s*.*\+|\bPaths\.get\s*\(\s*.*\+)",
             "Bandit B301 / Semgrep Path-Traversal / SpotBugs PATH_TRAVERSAL_IN",
             "Path Traversal / Arbitrary File Access",
             "High",
             "OWASP A01 / CWE-22: Unsanitized user input used in file system path construction.",
-            "Validate filenames against an allowlist and resolve canonical paths with os.path.basename / Path.resolve().",
+            "Validate filenames against an allowlist and resolve canonical paths with Path.resolve().",
         ),
         (
             r"(PASSWORD|SECRET|API_KEY|TOKEN|PRIVATE_KEY|DB_PASS|AWS_SECRET)\s*=\s*['\"][^'\"]{4,}['\"]",
@@ -155,7 +238,7 @@ def run_static_pattern_scanners(code: str, language: str) -> List[Dict[str, str]
             "Hardcoded Secret / Credential",
             "Critical",
             "OWASP A02 & A07 / CWE-798: Hardcoded secret, password, or API key embedded directly in source code.",
-            "Remove hardcoded credentials from source code and load them via os.getenv() or a secret manager.",
+            "Remove hardcoded credentials from source code and load them via os.environ.get() / System.getenv().",
         ),
         (
             r"MessageDigest\.getInstance\(\s*['\"](MD5|SHA-1|SHA1)['\"]\s*\)|hashlib\.(md5|sha1)\(|Cipher\.getInstance\(\s*['\"](DES|RC4|AES/ECB)",
@@ -163,7 +246,15 @@ def run_static_pattern_scanners(code: str, language: str) -> List[Dict[str, str]
             "Weak Cryptography / Broken Hash Algorithm",
             "High",
             "OWASP A02 / CWE-327 & CWE-328: Broken or risky cryptographic algorithm (MD5/SHA-1/DES/ECB) used.",
-            "Use Argon2id or bcrypt for passwords, SHA-256/SHA-512 for integrity, and AES-GCM for encryption.",
+            "Replace MD5/SHA-1 with secrets.token_urlsafe(32) for tokens, SHA-256/512 for digests, or Argon2id/bcrypt for passwords.",
+        ),
+        (
+            r"\brandom\.(randint|choice|random)\s*\(|new\s+java\.util\.Random\s*\(",
+            "Bandit B311 / SpotBugs / SEI CERT MSC02-J",
+            "Weak Pseudo-Random Number Generator (PRNG)",
+            "High",
+            "OWASP A02 / CWE-338: Non-cryptographic PRNG used in security-sensitive context.",
+            "Use Python's secrets module (secrets.token_urlsafe(32)) or Java's java.security.SecureRandom.",
         ),
         (
             r"(SELECT|INSERT|UPDATE|DELETE)\s+.*(\+|%s|\{.*\}|\.format\()",
@@ -171,7 +262,7 @@ def run_static_pattern_scanners(code: str, language: str) -> List[Dict[str, str]
             "SQL Injection",
             "Critical",
             "OWASP A03 / CWE-89: Dynamic SQL query constructed using string concatenation or f-strings.",
-            "Use parameterized queries (cursor.execute('SELECT ... WHERE x = ?', (val,))) or PreparedStatement.",
+            "Use parameterized SQL queries (cursor.execute('SELECT ... WHERE x = ?', (val,))) or Java PreparedStatement.",
         ),
         (
             r"(subprocess\.(Popen|call|run)\(.*shell\s*=\s*True|os\.system\(|Runtime\.getRuntime\(\)\.exec\()",
@@ -179,7 +270,7 @@ def run_static_pattern_scanners(code: str, language: str) -> List[Dict[str, str]
             "OS Command Injection",
             "Critical",
             "OWASP A03 / CWE-78: OS command executed with shell=True or unsanitized user input.",
-            "Pass command arguments as a list with shell=False (e.g., subprocess.run(['ping', '-c', '1', host], shell=False)).",
+            "Validate input against an allowlist and pass command arguments as a list with shell=False.",
         ),
         (
             r"(render_template_string|markupsafe\.Markup|\|safe\b|innerHTML\s*=|document\.write\(|response\.getWriter\(\)\.print\(.*\+)",
@@ -216,6 +307,9 @@ def run_static_pattern_scanners(code: str, language: str) -> List[Dict[str, str]
     ]
 
     for idx, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if stripped.startswith(("#", "//", "/*", "*")):
+            continue
         for pat, tool_ref, vuln_name, sev, msg, rec in sast_rules:
             if re.search(pat, line, flags=re.IGNORECASE):
                 flags.append({
@@ -226,7 +320,7 @@ def run_static_pattern_scanners(code: str, language: str) -> List[Dict[str, str]
                     "line": f"Line {idx}",
                     "message": msg,
                     "recommendation": rec,
-                    "snippet": line.strip(),
+                    "snippet": stripped,
                 })
 
     if language == "java" and "DriverManager.getConnection(" in code and "try (" not in code:
@@ -256,8 +350,11 @@ def run_static_pattern_scanners(code: str, language: str) -> List[Dict[str, str]
             })
 
     for idx, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if stripped.startswith(("#", "//")):
+            continue
         indent = len(line) - len(line.lstrip(" "))
-        if indent >= 16 and re.match(r"^(if|for|while|elif|else)\b", line.strip()):
+        if indent >= 16 and re.match(r"^(if|for|while|elif|else)\b", stripped):
             flags.append({
                 "tool": "Radon / Pylint / Design Anti-Pattern: Spaghetti Code",
                 "type": "Design Anti-Pattern (Spaghetti Code)",
@@ -265,8 +362,8 @@ def run_static_pattern_scanners(code: str, language: str) -> List[Dict[str, str]
                 "severity": "Medium",
                 "line": f"Line {idx}",
                 "message": "Deeply nested control flow (>4 indentation levels) increases cognitive complexity.",
-                "recommendation": "Refactor nested conditionals using guard clauses and early returns.",
-                "snippet": line.strip(),
+                "recommendation": "Refactor nested conditionals into helper functions using guard clauses and early returns.",
+                "snippet": stripped,
             })
             break
 

@@ -1,4 +1,5 @@
 ﻿import html
+import inspect
 import json
 import os
 import sys
@@ -14,7 +15,7 @@ if str(ROOT_DIR) not in sys.path:
 
 import requests
 import streamlit as st
-from parsers.code_validator import validate_submission
+from parsers.code_validator import detect_language, validate_submission
 from reports.report_generator import (
     compute_grade_and_verdict,
     generate_executive_html_report,
@@ -35,6 +36,9 @@ try:
 except Exception:
     HAS_ACE_EDITOR = False
 
+APP_TITLE = "AI Code Review & Security Analysis Agent"
+APP_SUBTITLE = "Multi-Agent Static Analysis, OWASP Top 10 Security Review & RAG Remediation Platform"
+
 API_BASE = "http://127.0.0.1:8000"
 HEALTH_URL = f"{API_BASE}/health"
 ANALYZE_URL = f"{API_BASE}/api/v1/analyze"
@@ -42,7 +46,7 @@ CHAT_URL = f"{API_BASE}/api/v1/chat"
 FIX_ALL_URL = f"{API_BASE}/api/v1/fix-all"
 
 st.set_page_config(
-    page_title="CodeGuard AI | Enterprise Code Review & Security Portal",
+    page_title=APP_TITLE,
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -51,15 +55,62 @@ st.set_page_config(
 
 def _render_html(markup: str) -> None:
     """
-    Renders HTML safely in Streamlit by stripping all leading whitespace per line.
-    Prevents CommonMark from misinterpreting 4-space indented HTML as a raw code block.
+    Renders HTML/CSS safely in Streamlit by stripping leading indentation per line
+    so CommonMark never turns indented tags into raw code blocks.
     """
     compact = "\n".join(line.strip() for line in markup.splitlines() if line.strip())
     st.markdown(compact, unsafe_allow_html=True)
 
 
+def _render_ace_editor(
+    value: str,
+    language: str,
+    height: int,
+    key: str,
+    annotations: list = None,
+) -> str:
+    """
+    Renders a full IDE-grade code editor (line numbers, syntax highlighting, zero
+    English spellcheck squiggles, and live syntax-error gutter markers).
+    """
+    if not HAS_ACE_EDITOR:
+        return st.text_area(
+            "Source Code Editor",
+            value=value,
+            height=height,
+            key=f"fallback_{key}",
+            label_visibility="collapsed",
+        )
+
+    ace_lang = "java" if language == "java" else "python"
+    kwargs = {
+        "value": value,
+        "language": ace_lang,
+        "theme": "chrome",
+        "keybinding": "vscode",
+        "font_size": 14,
+        "tab_size": 4,
+        "show_gutter": True,
+        "show_print_margin": False,
+        "wrap": False,
+        "auto_update": True,
+        "height": height,
+        "key": key,
+    }
+
+    try:
+        sig = inspect.signature(st_ace)
+        if annotations and "annotations" in sig.parameters:
+            kwargs["annotations"] = annotations
+    except Exception:
+        pass
+
+    content = st_ace(**kwargs)
+    return value if content is None else content
+
+
 # ---------------------------------------------------------------------------
-# Enterprise Cybersecurity SaaS Design System (Light Slate Theme)
+# Complete Unified Enterprise Blue & White Design System (Single Stylesheet)
 # ---------------------------------------------------------------------------
 _render_html(
     """
@@ -67,28 +118,208 @@ _render_html(
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 html, body, [class*="css"] {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
-[data-testid="stAppViewContainer"] {
-    background-color: #F8FAFC;
-    color: #0F172A;
+[data-testid="stAppViewContainer"], .stApp {
+    background-color: #F8FAFC !important;
+    color: #0F172A !important;
 }
 [data-testid="stHeader"] {
-    background: transparent;
+    background: transparent !important;
 }
 .block-container {
     padding-top: 1.15rem !important;
     padding-bottom: 3rem !important;
     max-width: 1280px !important;
 }
-#MainMenu, footer {
-    visibility: hidden;
+#MainMenu, footer, [data-testid="stDeployButton"] {
+    visibility: hidden !important;
+    display: none !important;
+}
+
+/* Primary Buttons -> Royal Enterprise Blue */
+button[kind="primary"],
+div.stButton > button[kind="primary"],
+div.stDownloadButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
+    color: #FFFFFF !important;
+    border: 1px solid #1D4ED8 !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25) !important;
+    transition: all 0.15s ease !important;
+}
+button[kind="primary"]:hover,
+div.stButton > button[kind="primary"]:hover,
+div.stDownloadButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%) !important;
+    color: #FFFFFF !important;
+    border-color: #1E40AF !important;
+}
+button[kind="primary"] p, button[kind="primary"] span {
+    color: #FFFFFF !important;
+}
+
+/* Secondary Buttons -> Crisp White with Dark Slate Text */
+button[kind="secondary"],
+div.stButton > button[kind="secondary"],
+div.stDownloadButton > button[kind="secondary"],
+div.stDownloadButton > button {
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+button[kind="secondary"]:hover,
+div.stButton > button[kind="secondary"]:hover,
+div.stDownloadButton > button:hover {
+    background-color: #EFF6FF !important;
+    color: #1D4ED8 !important;
+    border-color: #2563EB !important;
+}
+button[kind="secondary"] p, button[kind="secondary"] span {
+    color: #0F172A !important;
+}
+button[kind="secondary"]:hover p, button[kind="secondary"]:hover span {
+    color: #1D4ED8 !important;
+}
+button:disabled {
+    background-color: #E2E8F0 !important;
+    color: #64748B !important;
+    border-color: #CBD5E1 !important;
+    opacity: 0.75 !important;
+}
+
+/* Expanders */
+[data-testid="stExpander"],
+[data-testid="stExpander"] details {
+    background-color: #FFFFFF !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    margin-bottom: 10px !important;
+}
+[data-testid="stExpander"] summary {
+    background-color: #F8FAFC !important;
+    color: #0F172A !important;
+    font-weight: 600 !important;
+    padding: 12px 16px !important;
+}
+[data-testid="stExpander"] summary:hover {
+    background-color: #EFF6FF !important;
+    color: #1D4ED8 !important;
+}
+[data-testid="stExpander"] summary p,
+[data-testid="stExpander"] summary span,
+[data-testid="stExpander"] summary svg {
+    color: #0F172A !important;
+    fill: #0F172A !important;
+}
+[data-testid="stExpanderDetails"] {
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+    border-top: 1px solid #E2E8F0 !important;
+}
+
+/* File Uploader Dropzone */
+[data-testid="stFileUploader"] section,
+[data-testid="stFileUploaderDropzone"] {
+    background-color: #F8FAFC !important;
+    border: 1.5px dashed #93C5FD !important;
+    border-radius: 12px !important;
+    color: #0F172A !important;
+}
+[data-testid="stFileUploaderDropzone"] span,
+[data-testid="stFileUploaderDropzone"] small,
+[data-testid="stFileUploaderDropzone"] p,
+[data-testid="stFileUploaderDropzone"] div {
+    color: #334155 !important;
+}
+[data-testid="stFileUploaderDropzone"] button {
+    background-color: #FFFFFF !important;
+    color: #1D4ED8 !important;
+    border: 1px solid #2563EB !important;
+    border-radius: 8px !important;
+}
+
+/* Segmented Control & Filter Pills */
+[data-testid="stSegmentedControl"] button,
+[data-baseweb="button-group"] button {
+    background-color: #FFFFFF !important;
+    color: #334155 !important;
+    border: 1px solid #CBD5E1 !important;
+    font-weight: 600 !important;
+}
+[data-testid="stSegmentedControl"] button[aria-pressed="true"],
+[data-baseweb="button-group"] button[aria-pressed="true"] {
+    background-color: #2563EB !important;
+    color: #FFFFFF !important;
+    border-color: #2563EB !important;
+}
+[data-testid="stSegmentedControl"] button[aria-pressed="true"] p,
+[data-baseweb="button-group"] button[aria-pressed="true"] p {
+    color: #FFFFFF !important;
+}
+
+/* Selectbox, Inputs & Bordered Containers */
+[data-baseweb="select"] > div,
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background-color: #FFFFFF !important;
+    color: #0F172A !important;
+    border-color: #CBD5E1 !important;
+}
+[data-baseweb="select"] span,
+[data-baseweb="select"] input,
+label, .stMarkdown p, .stMarkdown li, .stCaption {
+    color: #0F172A !important;
+}
+.stCaption, [data-testid="stCaptionContainer"] p {
+    color: #475569 !important;
+}
+
+/* Code Blocks */
+[data-testid="stCodeBlock"], pre {
+    background-color: #F1F5F9 !important;
+    border: 1px solid #CBD5E1 !important;
+    border-radius: 10px !important;
+}
+[data-testid="stCodeBlock"] code, pre code {
+    color: #0F172A !important;
+}
+
+/* IDE Editor Frame Header */
+.cg-editor-header {
+    background: #F1F5F9;
+    border: 1px solid #CBD5E1;
+    border-bottom: none;
+    border-radius: 12px 12px 0 0;
+    padding: 9px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #1E293B;
+    margin-top: 8px;
+}
+.cg-editor-dots {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.cg-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
 }
 
 /* Top Brand Bar */
 .cg-topbar {
     background: #FFFFFF;
-    border: 1px solid #E2E8F0;
+    border: 1px solid #CBD5E1;
     border-radius: 16px;
     padding: 15px 24px;
     margin-bottom: 16px;
@@ -97,317 +328,169 @@ html, body, [class*="css"] {
     align-items: center;
     flex-wrap: wrap;
     gap: 14px;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05), 0 4px 16px rgba(15, 23, 42, 0.03);
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.05);
 }
-.cg-brand {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-}
+.cg-brand { display: flex; align-items: center; gap: 14px; }
 .cg-logo {
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
-    background: linear-gradient(135deg, #2563EB 0%, #4F46E5 100%);
-    color: #FFFFFF;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.35rem;
-    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
+    width: 44px; height: 44px; border-radius: 12px;
+    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+    color: #FFFFFF; display: flex; align-items: center; justify-content: center;
+    font-size: 1.35rem; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.28);
 }
-.cg-title {
-    font-size: 1.25rem;
-    font-weight: 800;
-    color: #0F172A;
-    letter-spacing: -0.025em;
-    line-height: 1.2;
-}
-.cg-sub {
-    font-size: 0.82rem;
-    color: #64748B;
-    margin-top: 2px;
-}
-.cg-status-group {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
+.cg-title { font-size: 1.22rem; font-weight: 800; color: #0F172A; letter-spacing: -0.025em; line-height: 1.2; }
+.cg-sub { font-size: 0.81rem; color: #475569; margin-top: 2px; }
+.cg-status-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cg-pill {
-    background: #F1F5F9;
-    border: 1px solid #E2E8F0;
-    color: #334155;
-    padding: 5px 12px;
-    border-radius: 999px;
-    font-size: 0.76rem;
-    font-weight: 600;
+    background: #EFF6FF; border: 1px solid #BFDBFE; color: #1E40AF;
+    padding: 5px 12px; border-radius: 999px; font-size: 0.76rem; font-weight: 600;
 }
 .cg-pill-live {
-    background: #ECFDF5;
-    border: 1px solid #A7F3D0;
-    color: #047857;
-    padding: 5px 12px;
-    border-radius: 999px;
-    font-size: 0.76rem;
-    font-weight: 600;
+    background: #ECFDF5; border: 1px solid #A7F3D0; color: #047857;
+    padding: 5px 12px; border-radius: 999px; font-size: 0.76rem; font-weight: 600;
 }
 
 /* Section Headers */
-.cg-section-head {
-    margin: 6px 0 16px 0;
-}
-.cg-section-head h2 {
-    margin: 0;
-    font-size: 1.42rem;
-    font-weight: 700;
-    color: #0F172A;
-    letter-spacing: -0.02em;
-}
-.cg-section-head p {
-    margin: 4px 0 0 0;
-    font-size: 0.89rem;
-    color: #64748B;
-}
+.cg-section-head { margin: 6px 0 16px 0; }
+.cg-section-head h2 { margin: 0; font-size: 1.42rem; font-weight: 700; color: #0F172A; letter-spacing: -0.02em; }
+.cg-section-head p { margin: 4px 0 0 0; font-size: 0.89rem; color: #475569; }
 
 /* Cards & Status Strips */
 .cg-card {
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-radius: 14px;
-    padding: 18px 22px;
-    margin-bottom: 16px;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 14px;
+    padding: 18px 22px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 .cg-syntax-bar {
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-radius: 12px;
-    padding: 12px 16px;
-    margin: 10px 0 14px 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 10px;
+    background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 12px;
+    padding: 12px 16px; margin: 10px 0 14px 0;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
 }
-.cg-syntax-left {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
+.cg-syntax-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .cg-tag {
-    display: inline-block;
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 0.76rem;
-    font-weight: 600;
-    background: #EFF6FF;
-    color: #1D4ED8;
-    border: 1px solid #BFDBFE;
+    display: inline-block; padding: 4px 10px; border-radius: 6px;
+    font-size: 0.76rem; font-weight: 600; background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE;
 }
 .cg-tag-neutral {
-    display: inline-block;
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 0.76rem;
-    font-weight: 600;
-    background: #F1F5F9;
-    color: #334155;
-    border: 1px solid #E2E8F0;
+    display: inline-block; padding: 4px 10px; border-radius: 6px;
+    font-size: 0.76rem; font-weight: 600; background: #F1F5F9; color: #334155; border: 1px solid #CBD5E1;
 }
 .cg-badge-ok {
-    background: #ECFDF5;
-    color: #047857;
-    border: 1px solid #A7F3D0;
-    padding: 4px 12px;
-    border-radius: 999px;
-    font-size: 0.78rem;
-    font-weight: 600;
+    background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0;
+    padding: 4px 12px; border-radius: 999px; font-size: 0.78rem; font-weight: 600;
 }
 .cg-badge-err {
-    background: #FEF2F2;
-    color: #B91C1C;
-    border: 1px solid #FECACA;
-    padding: 4px 12px;
-    border-radius: 999px;
-    font-size: 0.78rem;
-    font-weight: 600;
+    background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA;
+    padding: 4px 12px; border-radius: 999px; font-size: 0.78rem; font-weight: 600;
 }
 
 /* KPI Grid */
-.cg-kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 16px;
-    margin-bottom: 16px;
-}
+.cg-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
 .cg-kpi {
-    background: #FFFFFF;
-    border: 1px solid #E2E8F0;
-    border-radius: 14px;
-    padding: 18px 20px;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 14px;
+    padding: 18px 20px; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
-.cg-kpi-label {
-    font-size: 0.74rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #64748B;
-}
-.cg-kpi-val {
-    font-size: 1.82rem;
-    font-weight: 800;
-    color: #0F172A;
-    margin: 4px 0 2px 0;
-    letter-spacing: -0.03em;
-}
-.cg-kpi-foot {
-    font-size: 0.78rem;
-    color: #64748B;
-}
+.cg-kpi-label { font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #475569; }
+.cg-kpi-val { font-size: 1.82rem; font-weight: 800; color: #0F172A; margin: 4px 0 2px 0; letter-spacing: -0.03em; }
+.cg-kpi-foot { font-size: 0.78rem; color: #64748B; }
 
 /* 5-Column Severity Strip */
-.cg-sev-grid {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 12px;
-    margin-bottom: 18px;
-}
-.cg-sev-card {
-    border-radius: 12px;
-    padding: 13px 12px;
-    text-align: center;
-    border: 1px solid #E2E8F0;
-    background: #FFFFFF;
-}
-.cg-sev-crit { border-top: 4px solid #EF4444; }
-.cg-sev-high { border-top: 4px solid #F97316; }
-.cg-sev-med  { border-top: 4px solid #EAB308; }
-.cg-sev-low  { border-top: 4px solid #3B82F6; }
+.cg-sev-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 18px; }
+.cg-sev-card { border-radius: 12px; padding: 13px 12px; text-align: center; border: 1px solid #CBD5E1; background: #FFFFFF; }
+.cg-sev-crit { border-top: 4px solid #DC2626; }
+.cg-sev-high { border-top: 4px solid #EA580C; }
+.cg-sev-med  { border-top: 4px solid #CA8A04; }
+.cg-sev-low  { border-top: 4px solid #2563EB; }
 .cg-sev-info { border-top: 4px solid #64748B; }
 .cg-sev-count { font-size: 1.48rem; font-weight: 800; color: #0F172A; }
-.cg-sev-name  { font-size: 0.73rem; font-weight: 700; text-transform: uppercase; color: #64748B; margin-top: 2px; }
+.cg-sev-name  { font-size: 0.73rem; font-weight: 700; text-transform: uppercase; color: #475569; margin-top: 2px; }
 
-/* Complexity Footer Strip beneath Radar Chart */
-.cg-tele-footer {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding-top: 10px;
-    margin-top: 4px;
-    border-top: 1px solid #F1F5F9;
-}
-
-/* Progress Track */
-.cg-gauge-head {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: #1E293B;
-    margin-bottom: 6px;
-}
-.cg-track {
-    width: 100%;
-    height: 9px;
-    background: #E2E8F0;
-    border-radius: 999px;
-    overflow: hidden;
-}
-.cg-fill {
-    height: 100%;
-    border-radius: 999px;
-}
+.cg-tele-footer { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; margin-top: 4px; border-top: 1px solid #E2E8F0; }
+.cg-gauge-head { display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600; color: #1E293B; margin-bottom: 6px; }
+.cg-track { width: 100%; height: 9px; background: #E2E8F0; border-radius: 999px; overflow: hidden; }
+.cg-fill { height: 100%; border-radius: 999px; }
 
 /* Git-Style Diff Viewer */
-.gd-wrap {
-    border: 1px solid #CBD5E1;
-    border-radius: 12px;
-    overflow: hidden;
-    background: #FFFFFF;
-    margin: 12px 0 18px 0;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
-}
+.gd-wrap { border: 1px solid #CBD5E1; border-radius: 12px; overflow: hidden; background: #FFFFFF; margin: 12px 0 18px 0; }
 .gd-header {
-    background: #F1F5F9;
-    border-bottom: 1px solid #CBD5E1;
-    padding: 10px 16px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    font-size: 0.82rem;
-    font-weight: 600;
-    color: #0F172A;
+    background: #EFF6FF; border-bottom: 1px solid #BFDBFE; padding: 10px 16px;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+    font-size: 0.82rem; font-weight: 600; color: #1E3A8A;
 }
-.gd-stat-add {
-    background: #DCFCE7;
-    color: #166534;
-    padding: 3px 9px;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    margin-right: 6px;
-}
-.gd-stat-del {
-    background: #FEE2E2;
-    color: #991B1B;
-    padding: 3px 9px;
-    border-radius: 999px;
-    font-size: 0.75rem;
-}
-.gd-scroll {
-    max-height: 480px;
-    overflow: auto;
-}
-.gd-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-family: 'JetBrains Mono', Consolas, monospace;
-    font-size: 0.8rem;
-    line-height: 1.5;
-}
-.gd-ln {
-    width: 44px;
-    min-width: 40px;
-    text-align: right;
-    padding: 1px 8px;
-    color: #94A3B8;
-    user-select: none;
-    border-right: 1px solid #E2E8F0;
-}
-.gd-sign {
-    width: 24px;
-    text-align: center;
-    font-weight: 700;
-    user-select: none;
-}
-.gd-code {
-    padding: 1px 12px;
-    white-space: pre;
-}
+.gd-stat-add { background: #DCFCE7; color: #166534; padding: 3px 9px; border-radius: 999px; font-size: 0.75rem; margin-right: 6px; }
+.gd-stat-del { background: #FEE2E2; color: #991B1B; padding: 3px 9px; border-radius: 999px; font-size: 0.75rem; }
+.gd-scroll { max-height: 480px; overflow: auto; }
+.gd-table { width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 0.8rem; line-height: 1.5; }
+.gd-ln { width: 44px; min-width: 40px; text-align: right; padding: 1px 8px; color: #94A3B8; user-select: none; border-right: 1px solid #E2E8F0; }
+.gd-sign { width: 24px; text-align: center; font-weight: 700; user-select: none; }
+.gd-code { padding: 1px 12px; white-space: pre; }
 .gd-eq td { background: #FFFFFF; color: #334155; }
 .gd-del td { background: #FEF2F2; color: #991B1B; }
 .gd-del .gd-ln { background: #FEE2E2; color: #B91C1C; }
 .gd-add td { background: #ECFDF5; color: #166534; }
 .gd-add .gd-ln { background: #DCFCE7; color: #15803D; }
 
-/* Empty State */
-.cg-empty {
-    background: #FFFFFF;
-    border: 1px dashed #CBD5E1;
-    border-radius: 16px;
-    padding: 52px 24px;
-    text-align: center;
-    margin: 20px 0;
+/* Centered Modern Chatbot Styling */
+[data-testid="stBottom"] {
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, #F8FAFC 30%) !important;
+    padding-bottom: 14px !important;
 }
-.cg-empty h3 { color: #0F172A; margin: 10px 0 8px 0; font-weight: 700; }
-.cg-empty p  { color: #64748B; max-width: 520px; margin: 0 auto; font-size: 0.92rem; }
+[data-testid="stBottom"] > div {
+    max-width: 820px !important;
+    margin: 0 auto !important;
+    padding: 0 12px !important;
+}
+[data-testid="stChatInput"] {
+    max-width: 820px !important;
+    margin: 0 auto !important;
+}
+[data-testid="stChatInput"] > div {
+    background-color: #FFFFFF !important;
+    border: 1.5px solid #CBD5E1 !important;
+    border-radius: 16px !important;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08) !important;
+    padding: 4px 6px !important;
+}
+[data-testid="stChatInput"] > div:focus-within {
+    border-color: #2563EB !important;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14), 0 6px 20px rgba(15, 23, 42, 0.08) !important;
+}
+[data-testid="stChatInput"] textarea {
+    border: none !important;
+    box-shadow: none !important;
+    background-color: transparent !important;
+    color: #0F172A !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.93rem !important;
+}
+[data-testid="stChatInputSubmitButton"] {
+    background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%) !important;
+    color: #FFFFFF !important;
+    border-radius: 10px !important;
+    width: 38px !important;
+    height: 38px !important;
+    margin: 2px !important;
+}
+[data-testid="stChatInputSubmitButton"]:hover {
+    background: linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%) !important;
+}
+[data-testid="stChatInputSubmitButton"] svg {
+    fill: #FFFFFF !important;
+    color: #FFFFFF !important;
+}
+[data-testid="stChatMessage"] {
+    background-color: #FFFFFF !important;
+    border: 1px solid #E2E8F0 !important;
+    border-radius: 14px !important;
+    padding: 14px 18px !important;
+    margin-bottom: 12px !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+}
 
-/* Monospace Code Editor */
+/* Empty State */
+.cg-empty { background: #FFFFFF; border: 1px dashed #CBD5E1; border-radius: 16px; padding: 48px 24px; text-align: center; margin: 18px 0; }
+.cg-empty h3 { color: #0F172A; margin: 10px 0 8px 0; font-weight: 700; }
+.cg-empty p  { color: #475569; max-width: 520px; margin: 0 auto; font-size: 0.92rem; }
+
+/* Monospace Fallback Textarea */
 textarea {
     font-family: 'JetBrains Mono', monospace !important;
     font-size: 0.87rem !important;
@@ -533,6 +616,7 @@ defaults = {
     "active_page": "Code Scanner",
     "editor_code": BENCHMARK_SAMPLES["Medium Complexity — Python Auth & Order API"]["code"],
     "editor_filename": BENCHMARK_SAMPLES["Medium Complexity — Python Auth & Order API"]["filename"],
+    "editor_version": 0,
     "last_uploaded_id": None,
     "review_report": None,
     "scan_id": 0,
@@ -553,6 +637,13 @@ defaults = {
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+
+def _set_editor_content(code_text: str, fname: str) -> None:
+    """Programmatically updates the IDE code editor by bumping its mount version."""
+    st.session_state.editor_code = code_text
+    st.session_state.editor_filename = fname
+    st.session_state.editor_version += 1
 
 
 def _is_fastapi_online() -> bool:
@@ -613,7 +704,6 @@ def _execute_scan(code_text: str, language: str, fname: str, backend_online: boo
     st.session_state.fixed_full_code = ""
     st.session_state.fixed_filename = ""
     st.session_state.fixed_issues_count = 0
-    # Pre-build and cache Plotly figures once per scan
     st.session_state.cached_radar_fig = build_pentagon_radar_figure(report_data)
     st.session_state.cached_sev_fig = build_severity_bar_figure(report_data)
     st.session_state.cached_report_scan_id = -1
@@ -657,7 +747,8 @@ def _execute_fix_all(report_data: dict, orig_code: str, backend_online: bool) ->
         )
 
     st.session_state.fixed_full_code = fix_payload.get("fixed_code", "")
-    st.session_state.fixed_filename = fix_payload.get("fixed_filename", f"{Path(fname).stem}_fixed.{ 'py' if lang == 'python' else 'java' }")
+    ext = "py" if lang == "python" else "java"
+    st.session_state.fixed_filename = fix_payload.get("fixed_filename", f"{Path(fname).stem}_fixed.{ext}")
     st.session_state.fixed_issues_count = int(fix_payload.get("issues_addressed", len(findings)))
     for r in rem_plan:
         fid = r.get("finding_id", "ID")
@@ -665,7 +756,6 @@ def _execute_fix_all(report_data: dict, orig_code: str, backend_online: bool) ->
 
 
 def _ensure_cached_exports(report_data: dict) -> None:
-    """Generates and caches HTML, PDF, Markdown, and JSON reports once per scan."""
     if st.session_state.cached_report_scan_id == st.session_state.scan_id:
         return
     st.session_state.cached_html_report = generate_executive_html_report(report_data)
@@ -693,7 +783,7 @@ CATEGORY_BADGE = {
 backend_online = _is_fastapi_online()
 
 # ---------------------------------------------------------------------------
-# Top Enterprise Navigation Bar (Zero HTML Indentation — Leak Proof)
+# Top Enterprise Navigation Bar
 # ---------------------------------------------------------------------------
 status_pills = []
 if st.session_state.review_report:
@@ -716,8 +806,8 @@ _render_html(
 <div class="cg-brand">
 <div class="cg-logo">🛡️</div>
 <div>
-<div class="cg-title">CodeGuard AI</div>
-<div class="cg-sub">Enterprise Multi-Agent Code Review, OWASP Security Analysis &amp; RAG Remediation Portal</div>
+<div class="cg-title">{APP_TITLE}</div>
+<div class="cg-sub">{APP_SUBTITLE}</div>
 </div>
 </div>
 <div class="cg-status-group">{''.join(status_pills)}</div>
@@ -750,7 +840,7 @@ for idx, (page_key, label) in enumerate(nav_items):
 _render_html('<div style="height: 10px;"></div>')
 
 # ===========================================================================
-# PAGE 1: CODE SCANNER
+# PAGE 1: CODE SCANNER (IDE-GRADE CODE EDITOR WITH LINE NUMBERS & SYNTAX CHECK)
 # ===========================================================================
 if st.session_state.active_page == "Code Scanner":
     _render_html(
@@ -765,20 +855,25 @@ if st.session_state.active_page == "Code Scanner":
     b1, b2, b3, b4 = st.columns([1.2, 1.2, 1.2, 0.7])
     sample_keys = list(BENCHMARK_SAMPLES.keys())
     if b1.button("⚡ Low Complexity (Python)", width="stretch"):
-        st.session_state.editor_code = BENCHMARK_SAMPLES[sample_keys[0]]["code"]
-        st.session_state.editor_filename = BENCHMARK_SAMPLES[sample_keys[0]]["filename"]
+        _set_editor_content(
+            BENCHMARK_SAMPLES[sample_keys[0]]["code"],
+            BENCHMARK_SAMPLES[sample_keys[0]]["filename"],
+        )
         st.rerun()
     if b2.button("⚡ Medium Complexity (Python)", width="stretch"):
-        st.session_state.editor_code = BENCHMARK_SAMPLES[sample_keys[1]]["code"]
-        st.session_state.editor_filename = BENCHMARK_SAMPLES[sample_keys[1]]["filename"]
+        _set_editor_content(
+            BENCHMARK_SAMPLES[sample_keys[1]]["code"],
+            BENCHMARK_SAMPLES[sample_keys[1]]["filename"],
+        )
         st.rerun()
     if b3.button("⚡ High Complexity (Java)", width="stretch"):
-        st.session_state.editor_code = BENCHMARK_SAMPLES[sample_keys[2]]["code"]
-        st.session_state.editor_filename = BENCHMARK_SAMPLES[sample_keys[2]]["filename"]
+        _set_editor_content(
+            BENCHMARK_SAMPLES[sample_keys[2]]["code"],
+            BENCHMARK_SAMPLES[sample_keys[2]]["filename"],
+        )
         st.rerun()
     if b4.button("🗑️ Clear", width="stretch"):
-        st.session_state.editor_code = ""
-        st.session_state.editor_filename = "snippet.py"
+        _set_editor_content("", "snippet.py")
         st.rerun()
 
     with st.expander("📁 Upload a Python (.py) or Java (.java) source file from your computer", expanded=False):
@@ -789,16 +884,55 @@ if st.session_state.active_page == "Code Scanner":
         )
         if uploaded_file is not None and uploaded_file.file_id != st.session_state.last_uploaded_id:
             st.session_state.last_uploaded_id = uploaded_file.file_id
-            st.session_state.editor_filename = uploaded_file.name
-            st.session_state.editor_code = uploaded_file.getvalue().decode("utf-8", errors="replace")
+            _set_editor_content(
+                uploaded_file.getvalue().decode("utf-8", errors="replace"),
+                uploaded_file.name,
+            )
             st.rerun()
 
-    code_input = st.text_area(
-        f"Code Editor — Active File: {st.session_state.editor_filename}",
-        key="editor_code",
-        height=370,
-        placeholder="Paste your Python or Java source code here...",
+    # Pre-detect language & syntax for IDE syntax highlighting and gutter error marker
+    pre_lang = detect_language(
+        st.session_state.editor_code, filename=st.session_state.editor_filename
     )
+    pre_val = validate_submission(
+        st.session_state.editor_code, filename=st.session_state.editor_filename
+    )
+    ace_annotations = None
+    if st.session_state.editor_code.strip() and not pre_val.is_valid and pre_val.line_number:
+        ace_annotations = [
+            {
+                "row": max(0, int(pre_val.line_number) - 1),
+                "column": 0,
+                "text": str(pre_val.error_message or "Syntax Error"),
+                "type": "error",
+            }
+        ]
+
+    lang_mode_label = (
+        "Python" if pre_lang == "python" else "Java" if pre_lang == "java" else "Auto-Detect"
+    )
+    _render_html(
+        f"""
+<div class="cg-editor-header">
+<div class="cg-editor-dots">
+<span class="cg-dot" style="background:#EF4444;"></span>
+<span class="cg-dot" style="background:#F59E0B;"></span>
+<span class="cg-dot" style="background:#10B981;"></span>
+<span style="margin-left:8px;">{html.escape(str(st.session_state.editor_filename))}</span>
+</div>
+<div><span class="cg-tag">{lang_mode_label} IDE · Line Numbers &amp; Syntax Highlighting</span></div>
+</div>
+"""
+    )
+
+    code_input = _render_ace_editor(
+        value=st.session_state.editor_code,
+        language=pre_lang,
+        height=400,
+        key=f"scanner_ace_v{st.session_state.editor_version}",
+        annotations=ace_annotations,
+    )
+    st.session_state.editor_code = code_input
 
     validation = validate_submission(code_input, filename=st.session_state.editor_filename)
 
@@ -894,7 +1028,7 @@ if st.session_state.active_page == "Code Scanner":
         )
 
 # ===========================================================================
-# PAGE 2: REVIEW DASHBOARD (PLOTLY PENTAGON RADAR + COLOR-CODED SEVERITY CHART)
+# PAGE 2: REVIEW DASHBOARD
 # ===========================================================================
 elif st.session_state.active_page == "Review Dashboard":
     if rep is None:
@@ -933,7 +1067,6 @@ elif st.session_state.active_page == "Review Dashboard":
 """
         )
 
-        # Row 1: 4 KPI Cards
         _render_html(
             f"""
 <div class="cg-kpi-grid">
@@ -961,7 +1094,6 @@ elif st.session_state.active_page == "Review Dashboard":
 """
         )
 
-        # Row 2: 5-Tier Severity Breakdown Strip
         _render_html(
             f"""
 <div class="cg-sev-grid">
@@ -974,7 +1106,6 @@ elif st.session_state.active_page == "Review Dashboard":
 """
         )
 
-        # Row 3: Plotly 5-Axis Pentagon Radar Chart (Left) + Color-Coded Severity Chart (Right)
         if st.session_state.cached_radar_fig is None:
             st.session_state.cached_radar_fig = build_pentagon_radar_figure(rep)
         if st.session_state.cached_sev_fig is None:
@@ -1016,7 +1147,6 @@ elif st.session_state.active_page == "Review Dashboard":
 """
                 )
 
-        # Row 4: Full-Width Findings Explorer & PR Summary
         sub_view = _pill_selector(
             "Dashboard Section",
             ["All Unified Findings", "Security Only", "Code Quality Only", "PR Review Summary"],
@@ -1063,7 +1193,7 @@ elif st.session_state.active_page == "Review Dashboard":
             st.rerun()
 
 # ===========================================================================
-# PAGE 3: REMEDIATION STUDIO ("FIX EVERYTHING" + GIT DIFF + ACE EDITOR + CARDS)
+# PAGE 3: REMEDIATION STUDIO
 # ===========================================================================
 elif st.session_state.active_page == "Remediation Studio":
     if rep is None:
@@ -1099,18 +1229,17 @@ elif st.session_state.active_page == "Remediation Studio":
             f"""
 <div class="cg-section-head">
 <h2>AI Remediation Studio — {html.escape(fname)}</h2>
-<p>Apply all fixes automatically with a Git-style diff &amp; interactive editor, or review individual vulnerability cards with Human-in-the-Loop approval.</p>
+<p>Apply all fixes automatically with a Git-style diff &amp; interactive IDE editor, or review individual vulnerability cards with Human-in-the-Loop approval.</p>
 </div>
 """
         )
 
-        # ---- FULL-FILE AUTOMATED FIX STUDIO ----
         with st.container(border=True):
             fh1, fh2 = st.columns([2.2, 1.1])
             with fh1:
                 st.markdown("#### ✨ Automated Full-File Fix Studio")
                 st.caption(
-                    "Generate a complete, runnable patched file resolving all detected security & code quality issues in one click."
+                    "Generate a complete, optimized, runnable patched file resolving all security & code quality issues in one click."
                 )
             with fh2:
                 if st.button(
@@ -1119,7 +1248,7 @@ elif st.session_state.active_page == "Remediation Studio":
                     width="stretch",
                     disabled=(total_r == 0),
                 ):
-                    with st.spinner("Generating complete patched source file via AI Remediation Agent..."):
+                    with st.spinner("Generating complete optimized & hardened source file..."):
                         _execute_fix_all(rep, orig_code, backend_online)
                     st.rerun()
 
@@ -1127,7 +1256,6 @@ elif st.session_state.active_page == "Remediation Studio":
                 fixed_code = st.session_state.fixed_full_code
                 diff_html, add_cnt, del_cnt = build_git_diff_html(orig_code, fixed_code, fname)
 
-                # Summary Strip + View Toggle + Clean Download
                 s_col1, s_col2 = st.columns([1.8, 1])
                 with s_col1:
                     _render_html(
@@ -1145,28 +1273,13 @@ elif st.session_state.active_page == "Remediation Studio":
                 if view_mode == "Git Diff View":
                     _render_html(diff_html)
                 else:
-                    if HAS_ACE_EDITOR:
-                        edited = st_ace(
-                            value=fixed_code,
-                            language="python" if lang == "python" else "java",
-                            theme="github",
-                            font_size=14,
-                            tab_size=4,
-                            show_gutter=True,
-                            wrap=False,
-                            auto_update=True,
-                            height=420,
-                            key=f"ace_fixed_{st.session_state.scan_id}",
-                        )
-                        if edited is not None and edited != st.session_state.fixed_full_code:
-                            st.session_state.fixed_full_code = edited
-                    else:
-                        edited = st.text_area(
-                            "Editable Fixed Code (Clean Source):",
-                            value=fixed_code,
-                            height=420,
-                            key=f"ta_fixed_{st.session_state.scan_id}",
-                        )
+                    edited = _render_ace_editor(
+                        value=fixed_code,
+                        language=lang,
+                        height=430,
+                        key=f"fixed_ace_s{st.session_state.scan_id}",
+                    )
+                    if edited != st.session_state.fixed_full_code:
                         st.session_state.fixed_full_code = edited
 
                 dl_col1, dl_col2 = st.columns([1.5, 1])
@@ -1181,12 +1294,13 @@ elif st.session_state.active_page == "Remediation Studio":
                     )
                 with dl_col2:
                     if st.button("🔄 Load Fixed Code into Scanner", width="stretch"):
-                        st.session_state.editor_code = st.session_state.fixed_full_code
-                        st.session_state.editor_filename = st.session_state.fixed_filename
+                        _set_editor_content(
+                            st.session_state.fixed_full_code,
+                            st.session_state.fixed_filename,
+                        )
                         st.session_state.active_page = "Code Scanner"
                         st.rerun()
 
-        # ---- HUMAN-IN-THE-LOOP PROGRESS BANNER ----
         _render_html(
             f"""
 <div class="cg-card">
@@ -1199,7 +1313,6 @@ elif st.session_state.active_page == "Remediation Studio":
 """
         )
 
-        # ---- EXISTING PER-VULNERABILITY REMEDIATION CARDS ----
         cat_filter = _pill_selector(
             "Filter Remediation Category",
             [
@@ -1260,125 +1373,127 @@ elif st.session_state.active_page == "Remediation Studio":
                     st.code(r.get("corrected_code", ""), language=lang)
 
 # ===========================================================================
-# PAGE 4: AI CODE ASSISTANT
+# PAGE 4: AI CODE ASSISTANT (CENTERED MODERN CHATBOT WORKSPACE)
 # ===========================================================================
 elif st.session_state.active_page == "AI Code Assistant":
-    _render_html(
-        """
-<div class="cg-section-head">
-<h2>RAG-Powered Conversational Code Assistant</h2>
-<p>Ask follow-up questions about flagged vulnerabilities, code smells, or OWASP Top 10 and SEI CERT guidelines.</p>
-</div>
-"""
-    )
+    _, chat_col, _ = st.columns([0.14, 0.72, 0.14])
 
-    ctx_left, ctx_right = st.columns([3.5, 1])
-    with ctx_left:
-        if rep is not None:
-            st.info(
-                f"🔗 Attached Context: **{rep.get('filename', 'snippet')}** ({str(rep.get('language', 'python')).upper()}) — "
-                f"**{len(rep.get('unified_findings', []))} flagged findings** loaded into conversation memory."
-            )
-        else:
-            st.info("📚 General Secure Coding Mode — Grounded in OWASP Top 10, CWE, Bandit, SpotBugs, PMD & SEI CERT Knowledge Base.")
-    with ctx_right:
-        if st.button("🧹 Clear Chat", width="stretch"):
-            st.session_state.chat_history = []
-            st.rerun()
-
-    preset_prompts = [
-        "Explain this vulnerability.",
-        "How do I fix SQL Injection?",
-        "Why is duplicate code bad?",
-        "Show secure coding practices.",
-        "Explain this warning.",
-        "Suggest better code.",
-    ]
-    q_cols = st.columns(3)
-    chosen_preset = None
-    for idx, pq in enumerate(preset_prompts):
-        if q_cols[idx % 3].button(pq, key=f"chat_preset_{idx}", width="stretch"):
-            chosen_preset = pq
-
-    st.markdown("---")
-
-    if not st.session_state.chat_history:
+    with chat_col:
         _render_html(
             """
-<div class="cg-empty" style="padding: 36px 20px;">
-<div style="font-size: 2rem;">💬</div>
-<h3>Start a Conversation</h3>
-<p>Click any quick-ask prompt above or type your own question below to get grounded explanations and secure code examples.</p>
+<div class="cg-section-head" style="text-align:center;">
+<h2>RAG-Powered Conversational Code Assistant</h2>
+<p>Ask follow-up questions about flagged vulnerabilities, refactoring, or OWASP Top 10 &amp; SEI CERT standards.</p>
 </div>
 """
         )
-    else:
+
+        ctx_left, ctx_right = st.columns([3.8, 1.1])
+        with ctx_left:
+            if rep is not None:
+                st.info(
+                    f"🔗 Active Context: **{rep.get('filename', 'snippet')}** ({str(rep.get('language', 'python')).upper()}) — "
+                    f"**{len(rep.get('unified_findings', []))} findings** loaded."
+                )
+            else:
+                st.info("📚 General Secure Coding Mode — OWASP Top 10, CWE, Bandit, PMD & SEI CERT KB.")
+        with ctx_right:
+            if st.button("🧹 Clear Chat", width="stretch", disabled=(len(st.session_state.chat_history) == 0)):
+                st.session_state.chat_history = []
+                st.rerun()
+
+        user_input = st.chat_input("Ask about your code, vulnerabilities, or how to fix an issue...")
+        chosen_preset = None
+
+        if not st.session_state.chat_history and not user_input:
+            _render_html(
+                """
+<div class="cg-empty" style="padding: 34px 24px; margin: 12px 0 18px 0;">
+<div style="font-size: 2.1rem;">💬</div>
+<h3>How can I help harden your code?</h3>
+<p>Type any question in the box below or choose a quick prompt to get RAG-grounded explanations and patched code examples.</p>
+</div>
+"""
+            )
+            preset_prompts = [
+                "Explain this vulnerability.",
+                "How do I fix SQL Injection?",
+                "Why is duplicate code bad?",
+                "Show secure coding practices.",
+                "Explain this warning.",
+                "Suggest better code.",
+            ]
+            q_cols = st.columns(3)
+            for idx, pq in enumerate(preset_prompts):
+                if q_cols[idx % 3].button(pq, key=f"chat_preset_{idx}", width="stretch"):
+                    chosen_preset = pq
+
         for msg in st.session_state.chat_history:
-            with st.chat_message(msg["role"]):
+            avatar = "👤" if msg["role"] == "user" else "🛡️"
+            with st.chat_message(msg["role"], avatar=avatar):
                 st.markdown(msg["content"])
 
-    user_input = st.chat_input("Ask about flagged vulnerabilities, refactoring, or OWASP guidelines...")
-    active_query = chosen_preset or user_input
+        active_query = chosen_preset or user_input
 
-    if active_query:
-        st.session_state.chat_history.append({"role": "user", "content": active_query})
-        with st.chat_message("user"):
-            st.markdown(active_query)
+        if active_query:
+            st.session_state.chat_history.append({"role": "user", "content": active_query})
+            with st.chat_message("user", avatar="👤"):
+                st.markdown(active_query)
 
-        with st.chat_message("assistant"):
-            with st.spinner("Retrieving relevant guidelines from ChromaDB + FAISS & generating answer..."):
-                lang = rep.get("language", "python") if rep else "python"
-                findings_ctx = json.dumps((rep.get("unified_findings") or [])[:6]) if rep else ""
-                code_ctx = st.session_state.submitted_code or st.session_state.editor_code or ""
-                ans_data = None
+            with st.chat_message("assistant", avatar="🛡️"):
+                with st.spinner("Searching OWASP Knowledge Base & generating response..."):
+                    lang = rep.get("language", "python") if rep else "python"
+                    findings_ctx = json.dumps((rep.get("unified_findings") or [])[:6]) if rep else ""
+                    code_ctx = st.session_state.submitted_code or st.session_state.editor_code or ""
+                    ans_data = None
 
-                if backend_online:
-                    try:
-                        c_resp = requests.post(
-                            CHAT_URL,
-                            json={
-                                "question": active_query,
-                                "language": lang,
-                                "code_context": code_ctx,
-                                "findings_context": findings_ctx,
-                                "chat_history": st.session_state.chat_history[:-1],
-                            },
-                            timeout=25,
+                    if backend_online:
+                        try:
+                            c_resp = requests.post(
+                                CHAT_URL,
+                                json={
+                                    "question": active_query,
+                                    "language": lang,
+                                    "code_context": code_ctx,
+                                    "findings_context": findings_ctx,
+                                    "chat_history": st.session_state.chat_history[:-1],
+                                },
+                                timeout=25,
+                            )
+                            if c_resp.status_code == 200:
+                                ans_data = c_resp.json()
+                        except Exception:
+                            ans_data = None
+
+                    if ans_data is None:
+                        from src.agents import run_conversational_assistant
+
+                        ans_data = run_conversational_assistant(
+                            question=active_query,
+                            language=lang,
+                            code_context=code_ctx,
+                            findings_context=findings_ctx,
+                            chat_history=st.session_state.chat_history[:-1],
                         )
-                        if c_resp.status_code == 200:
-                            ans_data = c_resp.json()
-                    except Exception:
-                        ans_data = None
 
-                if ans_data is None:
-                    from src.agents import run_conversational_assistant
-
-                    ans_data = run_conversational_assistant(
-                        question=active_query,
-                        language=lang,
-                        code_context=code_ctx,
-                        findings_context=findings_ctx,
-                        chat_history=st.session_state.chat_history[:-1],
+                    sources_str = ", ".join(ans_data.get("sources") or ["OWASP Knowledge Base"])
+                    reply_md = (
+                        f"{ans_data.get('answer', '')}\n\n"
+                        f"---\n*🎯 Intent: `{ans_data.get('intent', 'General')}` · "
+                        f"📚 Grounded RAG Sources: `{sources_str}`*"
                     )
-
-                sources_str = ", ".join(ans_data.get("sources") or ["OWASP Knowledge Base"])
-                reply_md = (
-                    f"{ans_data.get('answer', '')}\n\n"
-                    f"---\n*🎯 Intent: `{ans_data.get('intent', 'General')}` · "
-                    f"📚 Grounded RAG Sources: `{sources_str}`*"
-                )
-                st.markdown(reply_md)
-                st.session_state.chat_history.append({"role": "assistant", "content": reply_md})
+                    st.session_state.chat_history.append({"role": "assistant", "content": reply_md})
+            st.rerun()
 
 # ===========================================================================
-# PAGE 5: REPORTS & AUDIT HISTORY (EXECUTIVE HTML + VISUAL PDF + MD + JSON)
+# PAGE 5: REPORTS & AUDIT HISTORY
 # ===========================================================================
 elif st.session_state.active_page == "Reports & History":
     _render_html(
         """
 <div class="cg-section-head">
 <h2>Executive Security Reports &amp; Review History</h2>
-<p>Download self-contained HTML reports with embedded high-DPI charts (1-click PDF print ready), direct visual PDFs, Markdown, or JSON payloads.</p>
+<p>Download publication-grade PDF monographs, self-contained HTML reports with embedded charts, Markdown PR summaries, or JSON payloads.</p>
 </div>
 """
     )
@@ -1392,31 +1507,31 @@ elif st.session_state.active_page == "Reports & History":
         e1, e2, e3, e4 = st.columns(4, gap="medium")
         with e1:
             with st.container(border=True):
-                st.markdown("#### 🌐 Executive HTML Report")
-                st.caption("Embedded Pentagon Radar & Severity PNG charts, Findings Matrix & 1-click Print-to-PDF.")
-                st.download_button(
-                    "Download HTML (.html)",
-                    data=st.session_state.cached_html_report,
-                    file_name=f"{base_fname}_executive_report.html",
-                    mime="text/html",
-                    type="primary",
-                    width="stretch",
-                )
-        with e2:
-            with st.container(border=True):
-                st.markdown("#### 📕 Visual PDF Report")
-                st.caption("Direct multi-page PDF with embedded charts, Security Grade, findings & patched code.")
+                st.markdown("#### 📕 Executive PDF Report")
+                st.caption("Research-grade multi-page PDF with embedded charts, compliance matrix & patched code.")
                 st.download_button(
                     "Download PDF (.pdf)",
                     data=st.session_state.cached_pdf_report,
                     file_name=f"{base_fname}_security_report.pdf",
                     mime="application/pdf",
+                    type="primary",
+                    width="stretch",
+                )
+        with e2:
+            with st.container(border=True):
+                st.markdown("#### 🌐 Interactive HTML Report")
+                st.caption("Self-contained technical monograph with high-DPI charts & 1-click Print-to-PDF.")
+                st.download_button(
+                    "Download HTML (.html)",
+                    data=st.session_state.cached_html_report,
+                    file_name=f"{base_fname}_executive_report.html",
+                    mime="text/html",
                     width="stretch",
                 )
         with e3:
             with st.container(border=True):
                 st.markdown("#### 📄 Markdown PR Report")
-                st.caption("Clean Pull Request summary ready for GitHub, GitLab, or Confluence documentation.")
+                st.caption("Clean Pull Request summary ready for GitHub, GitLab, or documentation wikis.")
                 st.download_button(
                     "Download Markdown (.md)",
                     data=st.session_state.cached_md_report,
@@ -1427,7 +1542,7 @@ elif st.session_state.active_page == "Reports & History":
         with e4:
             with st.container(border=True):
                 st.markdown("#### 📦 Structured JSON")
-                st.caption("Complete machine-readable scan payload for CI/CD security gates & SIEM archiving.")
+                st.caption("Complete machine-readable scan payload for CI/CD security gates & archiving.")
                 st.download_button(
                     "Download JSON (.json)",
                     data=st.session_state.cached_json_report,
@@ -1436,12 +1551,12 @@ elif st.session_state.active_page == "Reports & History":
                     width="stretch",
                 )
 
-        with st.expander("👁️ Live Preview — Executive HTML Security Report", expanded=False):
+        with st.expander("👁️ Live Preview — Executive HTML Audit Report", expanded=False):
             st.components.v1.html(
                 st.session_state.cached_html_report, height=680, scrolling=True
             )
     else:
-        st.info("Run a code scan in the **Code Scanner** tab first to generate executive HTML, PDF, Markdown, and JSON reports.")
+        st.info("Run a code scan in the **Code Scanner** tab first to generate executive PDF, HTML, Markdown, and JSON reports.")
 
     st.markdown("---")
     st.markdown("#### 🗄️ SQLite Historical Audit Log (`data/reviews.db`)")
